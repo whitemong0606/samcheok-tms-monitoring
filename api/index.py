@@ -42,12 +42,26 @@ UPLOADED_DATA: Dict[str, pd.DataFrame] = {}
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    root_index = os.path.join(os.path.dirname(os.path.dirname(__file__)), "index.html")
-    static_index = os.path.join(static_dir, "index.html")
-    index_path = root_index if os.path.exists(root_index) else static_index
-    if os.path.exists(index_path):
-        with open(index_path, "r", encoding="utf-8") as f:
-            return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
+    possible_paths = [
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "index.html"),
+        os.path.join(os.path.dirname(os.path.dirname(__file__)), "index.html"),
+        os.path.join(os.getcwd(), "static", "index.html"),
+        os.path.join(os.getcwd(), "index.html"),
+        os.path.join(static_dir, "index.html")
+    ]
+    for p in possible_paths:
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                content = f.read()
+                if "subpane-auto" in content:
+                    return HTMLResponse(content=content, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
+    
+    # Fallback if specific file path read
+    for p in possible_paths:
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
+                
     return HTMLResponse("<h2>굴뚝 배출가스 감시 시스템 API가 정상 실행 중입니다.</h2>")
 
 @app.get("/api/health")
