@@ -468,7 +468,6 @@ function renderIntegratedChart(series5m, param) {
     
     if (!series5m || series5m.length === 0) return;
 
-    // 배출구 1~5 목록
     const outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"];
     const colors = {
         "배출구 1": "#10b981", // Emerald
@@ -478,18 +477,18 @@ function renderIntegratedChart(series5m, param) {
         "배출구 5": "#f43f5e"  // Rose
     };
 
-    // 타임스탬프 라벨 (날짜 + 시각 포맷팅: "08/04 15:30")
-    const timestamps1 = series5m.filter(s => s.outlet === "배출구 1").map(s => {
-        if (!s.timestamp) return '';
-        const parts = s.timestamp.split(' ');
-        if (parts.length >= 2) {
-            const dateParts = parts[0].split('-');
-            const monthDay = `${dateParts[1]}/${dateParts[2]}`;
-            const timePart = parts[1].substring(0, 5);
-            return `${monthDay} ${timePart}`;
-        }
-        return s.timestamp;
-    });
+    // 타임스탬프 원본 및 시간 전용 포맷팅 (시인성 최적화: "15:30")
+    const stack1Data = series5m.filter(s => s.outlet === "배출구 1");
+    const rawTimestamps = stack1Data.map(s => s.timestamp || '');
+    const timeLabels = rawTimestamps.map(ts => ts ? ts.substring(11, 16) : '');
+
+    // 날짜 범위 동적 추출 (예: "(2026.08.04 ~ 2026.08.05)")
+    const dateRangeSpan = document.getElementById('chart-date-range');
+    if (dateRangeSpan && rawTimestamps.length > 0) {
+        const firstDate = rawTimestamps[0].substring(0, 10).replace(/-/g, '.');
+        const lastDate = rawTimestamps[rawTimestamps.length - 1].substring(0, 10).replace(/-/g, '.');
+        dateRangeSpan.textContent = `(${firstDate} ~ ${lastDate})`;
+    }
 
     const datasets = outlets.map(out => {
         const outData = series5m.filter(s => s.outlet === out);
@@ -514,7 +513,7 @@ function renderIntegratedChart(series5m, param) {
     stackChart = new Chart(ctx, {
         type: 'line',
         data: {
-            labels: timestamps1,
+            labels: timeLabels,
             datasets: datasets
         },
         options: {
@@ -533,7 +532,9 @@ function renderIntegratedChart(series5m, param) {
                 tooltip: {
                     callbacks: {
                         title: function(context) {
-                            return `[24시간 5분 데이터] 시각: ${context[0].label}`;
+                            const index = context[0].dataIndex;
+                            const fullTs = rawTimestamps[index] || context[0].label;
+                            return `[24시간 5분 데이터] 일시: ${fullTs}`;
                         }
                     }
                 }
