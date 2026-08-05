@@ -114,9 +114,21 @@ class CleanSysAPIClient:
                 flow_5m = np.maximum(0, np.random.normal(base_flow, 1000, 288))
                 temp_5m = np.maximum(0, np.random.normal(base_temp, 4, 288))
 
-                # 배출구 3: 특정 시간대(14:00 경) 미세 헌팅 인젝션
+                # 8/4 현장 실측 특성 반영: 운전 중 NOX 0.00ppm 순간 결측(드롭아웃) 발생
+                nox_zero_slots = [20, 21, 22, 75, 76, 130, 131, 185, 186, 240, 241]
+                for n_idx in nox_zero_slots:
+                    nox_5m[n_idx] = 0.00
+
+                # 배출구 3: 유량계 보수 작업 진행 중으로 인한 유량 계측 이상치 발생
                 if stack_num == 3:
                     tsp_5m[72:75] = tsp_5m[72:75] * 2.2
+                    # 유량계 보수 구간 (0.00m³/h 추락 및 48,000m³/h 급증 스파이크)
+                    flow_maintenance_slots_zero = [50, 51, 52, 53, 150, 151, 152]
+                    flow_maintenance_slots_high = [60, 61, 160, 161]
+                    for f_idx in flow_maintenance_slots_zero:
+                        flow_5m[f_idx] = 0.0
+                    for f_idx in flow_maintenance_slots_high:
+                        flow_5m[f_idx] = 48500.0
 
             # 5분 데이터 288개 구성
             for idx, ts in enumerate(timestamps_5m):
