@@ -212,8 +212,15 @@ function initCleanSysAPI() {
 
             if (data.success) {
                 showToast(`✅ [${plant}] CleanSYS API 실시간 측정 데이터 수집 및 시각화 완료!`);
-                const currentOutlet = document.getElementById('outlet-select').value;
-                loadAnalysisData(currentOutlet);
+                CURRENT_ANALYSIS_DATA = data;
+                
+                const selectedOutlet = document.getElementById('outlet-select').value || '배출구 1';
+                renderMetricCards(data.reports[selectedOutlet] || {});
+                renderIntegratedChart(data.series_5m, CURRENT_PARAM);
+                renderAlarmTable(data.all_alarms);
+                
+                const rawOutletFilter = document.getElementById('raw-outlet-select').value || 'ALL';
+                renderRawDataTable(data.series_5m, data.all_alarms, rawOutletFilter);
             } else {
                 const errMsg = data.message || data.detail || '응답 데이터 처리 중 오류 발생';
                 showToast(`⚠️ CleanSYS API: ${errMsg}`, 'WARNING');
@@ -471,8 +478,18 @@ function renderIntegratedChart(series5m, param) {
         "배출구 5": "#f43f5e"  // Rose
     };
 
-    // 타임스탬프 라벨 (배출구 1 기준 288개 5분 데이터 시계열)
-    const timestamps1 = series5m.filter(s => s.outlet === "배출구 1").map(s => s.timestamp ? s.timestamp.substring(11, 16) : '');
+    // 타임스탬프 라벨 (날짜 + 시각 포맷팅: "08/04 15:30")
+    const timestamps1 = series5m.filter(s => s.outlet === "배출구 1").map(s => {
+        if (!s.timestamp) return '';
+        const parts = s.timestamp.split(' ');
+        if (parts.length >= 2) {
+            const dateParts = parts[0].split('-');
+            const monthDay = `${dateParts[1]}/${dateParts[2]}`;
+            const timePart = parts[1].substring(0, 5);
+            return `${monthDay} ${timePart}`;
+        }
+        return s.timestamp;
+    });
 
     const datasets = outlets.map(out => {
         const outData = series5m.filter(s => s.outlet === out);
