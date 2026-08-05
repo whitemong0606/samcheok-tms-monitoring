@@ -211,7 +211,8 @@ function initCleanSysAPI() {
             const data = await res.json();
 
             if (data.success) {
-                showToast(`✅ [${plant}] CleanSYS API 실시간 측정 데이터 수집 및 시각화 완료!`);
+                const sourceText = data.source === 'GOOGLE_SHEETS' ? '📑 구글 시트 저장 데이터 로드' : '📡 CleanSYS Open API 실시간 수집 및 시트 저장';
+                showToast(`✅ [${plant}] ${sourceText} 시각화 완료!`);
                 CURRENT_ANALYSIS_DATA = data;
                 
                 const selectedOutlet = document.getElementById('outlet-select').value || '배출구 1';

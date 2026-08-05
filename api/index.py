@@ -125,20 +125,33 @@ async def upload_file(file: UploadFile = File(...)):
 @app.get("/api/analysis")
 def get_analysis_data():
     """
-    전체 배출구(배출구 1~5) 24시간(전일 08시~금일 08시) 시각화 및 검증 데이터 반환 (KST 기준)
+    [강원도 삼척시 한국남부발전 삼척빛드림본부 전용]
+    1. 구글 시트 일자별 탭(YYYY-MM-DD) 우선 조회 (Cache-First: 시트에 존재 시 API 호출 안 함)
+    2. 시트에 없을 경우 CleanSYS API 호출 및 구글 시트에 일자별 탭으로 저장
     """
     global UPLOADED_DATA
-    # KST 타임존 기반 실시간 24시간 시계열 생성 (Vercel 서버 UTC 대응)
-    df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry("한국남부발전(주) 삼척빛드림본부", "강원도")
+    date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+    plant_name = "한국남부발전(주) 삼척빛드림본부"
+    region_name = "강원도 삼척시"
+    
+    # 1. 구글 시트 우선 조회 (Cache-First)
+    df_5m = storage.read_telemetry_data(date_str)
+    val_logs = []
+    data_source = "GOOGLE_SHEETS"
+
+    if df_5m is None or df_5m.empty:
+        # 시트에 없을 경우 CleanSYS Open API 호출 및 시트에 저장
+        df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
+        storage.append_telemetry_data(df_5m, date_str)
+        data_source = "CLEANSYS_API"
+    
     UPLOADED_DATA["latest_5m"] = df_5m
-    UPLOADED_DATA["latest_30m"] = df_30m
     UPLOADED_DATA["latest_val_logs"] = val_logs
 
     outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
     reports = {}
     all_alarms = []
 
-    date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
     for out in outlets:
         out_df = df_5m[df_5m["outlet"] == out]
         rep = analyzer.generate_daily_report(out_df, out, date_str)
@@ -148,10 +161,12 @@ def get_analysis_data():
 
     return {
         "success": True,
+        "source": data_source,
+        "date_str": date_str,
         "outlets": outlets,
         "reports": reports,
         "all_alarms": all_alarms,
-        "validation_logs": UPLOADED_DATA.get("latest_val_logs", []),
+        "validation_logs": val_logs,
         "series_5m": df_5m.fillna(0).to_dict(orient="records")
     }
 
@@ -163,28 +178,36 @@ def fetch_cleansys_data(
     service_key: Optional[str] = Form(None)
 ):
     """
-    한국환경공단 CleanSYS API 연동 - KST 기준 전일 08시~금일 08시 5분/30분 데이터 수집 & 5분 6회 평균 검증
+    [강원도 삼척시 삼척빛드림본부 전용 수집]
+    구글 시트에 기존 24시간 데이터가 있으면 시트에서 로드하여 API 호출 횟수(쿼터)를 절약함.
     """
     try:
         if service_key:
             cleansys_client.service_key = service_key
 
-        plant_name = fact_manage_nm or "한국남부발전(주) 삼척빛드림본부"
-        region_name = area_nm or "강원도"
+        date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        plant_name = "한국남부발전(주) 삼척빛드림본부"
+        region_name = "강원도 삼척시"
 
-        # 수집 버튼 클릭 시 항상 실시간 KST 기준 전일 08:00 ~ 금일 08:00 24시간 5분 데이터 강제 생성
-        df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
+        # 구글 시트에 해당 일자 데이터 존재 여부 우선 검사 (Cache-First)
+        df_5m = storage.read_telemetry_data(date_str)
+        val_logs = []
+        data_source = "GOOGLE_SHEETS"
+
+        if df_5m is None or df_5m.empty:
+            # 시트에 없으면 API에서 24시간 수집 후 구글 시트에 일자별 탭으로 저장
+            df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
+            storage.append_telemetry_data(df_5m, date_str)
+            data_source = "CLEANSYS_API"
 
         global UPLOADED_DATA
         UPLOADED_DATA["latest_5m"] = df_5m
-        UPLOADED_DATA["latest_30m"] = df_30m
         UPLOADED_DATA["latest_val_logs"] = val_logs
 
         outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
         reports = {}
         all_alarms = []
 
-        date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
         for out in outlets:
             out_df = df_5m[df_5m["outlet"] == out]
             rep = analyzer.generate_daily_report(out_df, out, date_str)
@@ -194,9 +217,9 @@ def fetch_cleansys_data(
 
         return {
             "success": True,
+            "source": data_source,
             "period": f"{date_str} 08:00 ~ {date_str} 08:00 (24h)",
             "items_count_5m": len(df_5m),
-            "items_count_30m": len(df_30m),
             "fact_manage_nm": plant_name,
             "outlets": outlets,
             "reports": reports,
