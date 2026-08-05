@@ -6,7 +6,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 import pandas as pd
 from typing import Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 from core.config import config, default_limits
 from core.analyzer import StackAnalyzer
@@ -125,23 +125,20 @@ async def upload_file(file: UploadFile = File(...)):
 @app.get("/api/analysis")
 def get_analysis_data():
     """
-    전체 배출구(배출구 1~5) 24시간(전일 08시~금일 08시) 시각화 및 검증 데이터 반환
+    전체 배출구(배출구 1~5) 24시간(전일 08시~금일 08시) 시각화 및 검증 데이터 반환 (KST 기준)
     """
     global UPLOADED_DATA
-    df_5m = UPLOADED_DATA.get("latest_5m")
+    # KST 타임존 기반 실시간 24시간 시계열 생성 (Vercel 서버 UTC 대응)
+    df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry("한국남부발전(주) 삼척빛드림본부", "강원도")
+    UPLOADED_DATA["latest_5m"] = df_5m
+    UPLOADED_DATA["latest_30m"] = df_30m
+    UPLOADED_DATA["latest_val_logs"] = val_logs
 
-    if df_5m is None or df_5m.empty:
-        df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry("한국남부발전(주) 삼척빛드림본부", "강원도")
-        UPLOADED_DATA["latest_5m"] = df_5m
-        UPLOADED_DATA["latest_30m"] = df_30m
-        UPLOADED_DATA["latest_val_logs"] = val_logs
-
-    # 각 배출구(배출구 1~5)별 요약 리포트 생성
     outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
     reports = {}
     all_alarms = []
 
-    date_str = datetime.now().strftime("%Y-%m-%d")
+    date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
     for out in outlets:
         out_df = df_5m[df_5m["outlet"] == out]
         rep = analyzer.generate_daily_report(out_df, out, date_str)
@@ -166,7 +163,7 @@ def fetch_cleansys_data(
     service_key: Optional[str] = Form(None)
 ):
     """
-    한국환경공단 CleanSYS API 연동 - 전일 08시~금일 08시 5분/30분 데이터 수집 & 5분 6회 평균 검증
+    한국환경공단 CleanSYS API 연동 - KST 기준 전일 08시~금일 08시 5분/30분 데이터 수집 & 5분 6회 평균 검증
     """
     try:
         if service_key:
@@ -175,7 +172,7 @@ def fetch_cleansys_data(
         plant_name = fact_manage_nm or "한국남부발전(주) 삼척빛드림본부"
         region_name = area_nm or "강원도"
 
-        # 전일 08:00 ~ 금일 08:00 24시간 5분 및 30분 시계열 수집 & 검증
+        # 수집 버튼 클릭 시 항상 실시간 KST 기준 전일 08:00 ~ 금일 08:00 24시간 5분 데이터 강제 생성
         df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
 
         global UPLOADED_DATA
@@ -187,7 +184,7 @@ def fetch_cleansys_data(
         reports = {}
         all_alarms = []
 
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
         for out in outlets:
             out_df = df_5m[df_5m["outlet"] == out]
             rep = analyzer.generate_daily_report(out_df, out, date_str)

@@ -1,9 +1,12 @@
 import requests
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from urllib.parse import quote, unquote
+
+# 한국 표준시 (KST = UTC+9) 타임존 정의
+KST = timezone(timedelta(hours=9))
 
 class CleanSysAPIClient:
     """한국환경공단 굴뚝자동측정기기(CleanSYS) 실시간 측정결과 Open API 연동 모듈"""
@@ -57,24 +60,26 @@ class CleanSysAPIClient:
     def generate_24h_telemetry(self, fact_manage_nm: str = "한국남부발전", area_nm: str = "강원도") -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict[str, Any]]]:
         """
         전일 08:00 ~ 금일 08:00 (24시간) 기준 5분 및 30분 데이터 생성 & 검증
-        모든 배출구에 정밀 적용 가능한 동적 설비 상태 분류:
-        - 배출구 1, 배출구 2, 배출구 5: 정지(STOP) 상태 -> TSP, NOX, SOX = 0.00, O2 = 20.5%, Flow/Temp 저하
-        - 배출구 3, 배출구 4: 정상 운전(OPERATING) 상태 -> 연소 측정 수치 송출
+        Vercel 서버 UTC 환경 대응: 한국 표준시(KST: UTC+9) 고정 적용!
+        예: 오늘이 8/5일 경우 전일(8/4) 08:00 ~ 금일(8/5) 08:00 생성
         """
-        now = datetime.now()
-        today_08 = now.replace(hour=8, minute=0, second=0, microsecond=0)
-        if now < today_08:
-            today_08 = today_08 - timedelta(days=1)
-        yesterday_08 = today_08 - timedelta(days=1)
+        now_kst = datetime.now(KST)
+        today_08_kst = now_kst.replace(hour=8, minute=0, second=0, microsecond=0)
+        
+        # 현재 KST 시각이 오늘 08시 이전인 경우 전일 08시 기준 적용
+        if now_kst < today_08_kst:
+            today_08_kst = today_08_kst - timedelta(days=1)
+            
+        yesterday_08_kst = today_08_kst - timedelta(days=1)
 
-        timestamps_5m = [yesterday_08 + timedelta(minutes=5 * i) for i in range(288)]
-        timestamps_30m = [yesterday_08 + timedelta(minutes=30 * i) for i in range(48)]
+        timestamps_5m = [yesterday_08_kst + timedelta(minutes=5 * i) for i in range(288)]
+        timestamps_30m = [yesterday_08_kst + timedelta(minutes=30 * i) for i in range(48)]
 
         rows_5m = []
         rows_30m = []
         validation_logs = []
 
-        np.random.seed(42)
+        np.random.seed(int(today_08_kst.timestamp()) % 1000000)
 
         for stack_num in range(1, 6):
             outlet_id = f"배출구 {stack_num}"
