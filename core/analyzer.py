@@ -200,35 +200,7 @@ class StackAnalyzer:
                             level="WARNING"
                         ))
 
-        # 4-1. [현장 특성] 운전 중 NOX 0.00ppm 빈번한 순간 결측(드롭아웃) 검출
-        op_df = df[df["State"] == "OPERATING"]
-        for idx in op_df.index:
-            row = df.loc[idx]
-            nox_val = float(row.get("NOX", 0.0))
-            if nox_val == 0.0:
-                alarms.append(AlarmEvent(
-                    timestamp=str(row["timestamp"]),
-                    outlet=outlet_name,
-                    factor="NOX",
-                    alarm_type="ZERO_DROPOUT",
-                    message="[NOX 수치 이상/순간 결측] 운전 상태 중 질소산화물(NOX) 0.00ppm 순간 탈락 발생",
-                    level="WARNING"
-                ))
 
-        # 4-2. [현장 특성] 3번 배출구 유량계 보수 진행으로 인한 계측 이상 수치 검출
-        if "3" in str(outlet_name):
-            for idx in op_df.index:
-                row = df.loc[idx]
-                flow_val = float(row.get("Flow", 0.0))
-                if flow_val == 0.0 or flow_val > 42000.0:
-                    alarms.append(AlarmEvent(
-                        timestamp=str(row["timestamp"]),
-                        outlet=outlet_name,
-                        factor="Flow",
-                        alarm_type="FLOW_MAINTENANCE",
-                        message=f"[유량계 보수 작업 중] 3번 배출구 유량 계측기 정비 진행으로 인한 이상 수치({flow_val:.0f}m³/h) 발생",
-                        level="WARNING"
-                    ))
 
         # 5. 정지 중 이상 데이터 알람 (Stop-State Abnormal Data)
         # 정지 상태(STOP)임에도 0이 아닌 이상치(고온/고유량 또는 높은 오염물질 > 0.00) 송출 시 발생

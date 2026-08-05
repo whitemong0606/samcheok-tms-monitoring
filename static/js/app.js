@@ -428,7 +428,7 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
     tbody.innerHTML = '';
 
     if (!series5m || series5m.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">수집된 5분 데이터가 없습니다. 상단에서 API 수집 버튼을 눌러주세요.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="10" class="empty-row">수집된 5분 데이터가 없습니다. 상단에서 API 수집 버튼을 눌러주세요.</td></tr>`;
         return;
     }
 
@@ -457,6 +457,21 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
         const state = row.O2 >= 19.5 ? '정지' : '운전';
         const stateBadge = state === '정지' ? '<span class="badge badge-secondary">정지</span>' : '<span class="badge badge-success">운전</span>';
 
+        // 계측기 상태 (정상, 보수, 불량 등) 뱃지 및 구별 스타일링
+        const rawStatus = row.status || (state === '정지' ? '정지' : '정상');
+        let statusBadge = `<span class="badge badge-success">정상</span>`;
+        let statusCellClass = '';
+
+        if (rawStatus.includes('보수')) {
+            statusBadge = `<span class="badge badge-warning" style="background: rgba(245, 158, 11, 0.25); color: #fef08a; border: 1px solid #f59e0b;"><i class="fa-solid fa-wrench"></i> ${rawStatus}</span>`;
+            statusCellClass = 'cell-alarm-warning';
+        } else if (rawStatus.includes('불량') || rawStatus.includes('결측')) {
+            statusBadge = `<span class="badge badge-critical"><i class="fa-solid fa-bug"></i> ${rawStatus}</span>`;
+            statusCellClass = 'cell-alarm-critical';
+        } else if (rawStatus === '정지') {
+            statusBadge = `<span class="badge badge-secondary">정지</span>`;
+        }
+
         function getCellClass(factor) {
             const level = alarmMap[`${ts}_${out}_${factor}`] || alarmMap[`${ts}_${out}_ALL`];
             if (level === 'CRITICAL') return 'cell-alarm-critical';
@@ -475,6 +490,7 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
             <td>${ts}</td>
             <td><strong>${out}</strong></td>
             <td>${stateBadge}</td>
+            <td class="${statusCellClass}">${statusBadge}</td>
             <td class="${tspClass}">${row.TSP !== undefined ? row.TSP.toFixed(2) : '0.00'}</td>
             <td class="${noxClass}">${row.NOX !== undefined ? row.NOX.toFixed(2) : '0.00'}</td>
             <td class="${soxClass}">${row.SOX !== undefined ? row.SOX.toFixed(2) : '0.00'}</td>

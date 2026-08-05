@@ -114,21 +114,13 @@ class CleanSysAPIClient:
                 flow_5m = np.maximum(0, np.random.normal(base_flow, 1000, 288))
                 temp_5m = np.maximum(0, np.random.normal(base_temp, 4, 288))
 
-                # 8/4 현장 실측 특성 반영: 운전 중 NOX 0.00ppm 순간 결측(드롭아웃) 발생
-                nox_zero_slots = [20, 21, 22, 75, 76, 130, 131, 185, 186, 240, 241]
-                for n_idx in nox_zero_slots:
-                    nox_5m[n_idx] = 0.00
+                status_5m = ["정상"] * 288
 
-                # 배출구 3: 유량계 보수 작업 진행 중으로 인한 유량 계측 이상치 발생
+                # 3번 배출구: 유량계 보수 작업 진행 중인 구간에 계측기 상태 '보수 (유량계)' 설정
                 if stack_num == 3:
-                    tsp_5m[72:75] = tsp_5m[72:75] * 2.2
-                    # 유량계 보수 구간 (0.00m³/h 추락 및 48,000m³/h 급증 스파이크)
-                    flow_maintenance_slots_zero = [50, 51, 52, 53, 150, 151, 152]
-                    flow_maintenance_slots_high = [60, 61, 160, 161]
-                    for f_idx in flow_maintenance_slots_zero:
-                        flow_5m[f_idx] = 0.0
-                    for f_idx in flow_maintenance_slots_high:
-                        flow_5m[f_idx] = 48500.0
+                    maint_slots = list(range(50, 65)) + list(range(150, 165))
+                    for m_idx in maint_slots:
+                        status_5m[m_idx] = "보수 (유량계)"
 
             # 5분 데이터 288개 구성
             for idx, ts in enumerate(timestamps_5m):
@@ -137,6 +129,7 @@ class CleanSysAPIClient:
                     "outlet": outlet_id,
                     "fact_manage_nm": fact_manage_nm,
                     "area_nm": area_nm,
+                    "status": status_5m[idx] if stack_num not in [1, 2, 5] else "정지",
                     "TSP": round(float(tsp_5m[idx]), 2),
                     "NOX": round(float(nox_5m[idx]), 2),
                     "SOX": round(float(sox_5m[idx]), 2),
