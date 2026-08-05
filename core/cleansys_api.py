@@ -60,14 +60,26 @@ class CleanSysAPIClient:
 
     def get_raw_telemetry_dataframe(self, fact_manage_nm: str = "한국남부발전", area_nm: str = "강원도") -> pd.DataFrame:
         """
-        100% 순수 API 응답 데이터를 가공 없이 DataFrame으로 정제하여 반환
+        100% 순수 API 응답 데이터를 가공 없이 DataFrame으로 정제하여 반환 (강원도 삼척빛드림본부 전용)
         """
-        raw_items = self.fetch_realtime_data(fact_manage_nm, area_nm)
+        search_fact = "한국남부발전" if "남부" in str(fact_manage_nm) else fact_manage_nm
+        search_area = "강원도" if "강원" in str(area_nm) else area_nm
+
+        raw_items = self.fetch_realtime_data(search_fact, search_area)
+        if not raw_items:
+            raw_items = self.fetch_realtime_data(None, search_area)
         if not raw_items:
             return pd.DataFrame()
 
+        # 삼척빛드림본부 대상 필터링
+        samcheok_items = [
+            it for it in raw_items 
+            if "삼척" in str(it.get("fact_manage_nm", "")) or "삼척" in str(it.get("area_nm", "")) or "남부" in str(it.get("fact_manage_nm", ""))
+        ]
+        items_to_use = samcheok_items if samcheok_items else raw_items
+
         rows = []
-        for item in raw_items:
+        for item in items_to_use:
             s_code = str(item.get("stack_code", "1"))
             outlet_id = f"배출구 {s_code}" if not s_code.startswith("배출구") else s_code
             

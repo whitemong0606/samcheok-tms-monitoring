@@ -967,18 +967,18 @@ function initSubTabs() {
     const fetchApiBtn = document.getElementById('btn-auto-fetch-api');
     if (fetchApiBtn) {
         fetchApiBtn.addEventListener('click', async () => {
-            showToast('📡 CleanSYS 실시간 API 30분 실측 데이터 수집 및 구글 시트 저장 중...');
+            showToast('📡 강원도 삼척빛드림본부 CleanSYS 실시간 API 수집 & 구글시트 저장 중...');
             try {
                 const res = await fetch('/api/cron/fetch-30m');
                 const data = await res.json();
                 if (data.success) {
-                    showToast(`✅ 30분 실측 수집 성공! 총 ${data.rows_count}개 행이 구글 시트에 누적 저장되었습니다.`);
+                    showToast(`✅ [한국남부발전 삼척빛드림본부] API 데이터 수집 완료! 총 ${data.rows_count}개 30분 실측 데이터가 구글 시트에 누적 저장되었습니다.`);
                     loadAutoAnalysisData();
                 } else {
-                    showToast(`API 수집 오류: ${data.message || data.error}`, 'ERROR');
+                    showToast(`CleanSYS API 수집 실패: ${data.message || data.error}`, 'ERROR');
                 }
             } catch (err) {
-                showToast(`API 수집 통신 오류: ${err.message}`, 'ERROR');
+                showToast(`API 데이터 수집 통신 오류: ${err.message}`, 'ERROR');
             }
         });
     }
