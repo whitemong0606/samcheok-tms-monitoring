@@ -1,14 +1,10 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": {
-        "includeFiles": ["static/**", "index.html"]
-      }
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "static/**"
     }
-  ],
+  },
   "crons": [
     {
       "path": "/api/cron/fetch-30m",
@@ -26,7 +22,7 @@
     },
     {
       "src": "/(.*)",
-      "dest": "api/index.py"
+      "dest": "/api/index.py"
     }
   ]
 }
