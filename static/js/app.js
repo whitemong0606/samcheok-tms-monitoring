@@ -106,8 +106,24 @@ async function uploadFile(file) {
         });
         const res = await response.json();
         if (res.success) {
-            showToast(`✅ 업로드 완료! 총 ${res.total_rows}개 5분/30분 이력 데이터 분석 및 시각화 성공.`);
-            loadAnalysisData();
+            showToast(`✅ 업로드 완료! 총 ${res.total_rows}개 데이터 가공 및 차트/표 시각화 성공.`);
+            
+            // 수동 업로드 데이터 기반 직접 시각화 렌더링
+            if (res.reports && res.series_5m) {
+                CURRENT_ANALYSIS_DATA = res;
+                const selectedOutlet = document.getElementById('outlet-select').value || '배출구 1';
+                renderMetricCards(res.reports[selectedOutlet] || {});
+                renderIntegratedChart(res.series_5m, CURRENT_PARAM);
+                renderAlarmTable(res.all_alarms || []);
+                
+                const rawOutletFilter = document.getElementById('raw-outlet-select').value || 'ALL';
+                renderRawDataTable(res.series_5m, res.all_alarms || [], rawOutletFilter);
+
+                initParamButtons();
+                initRawDataTable();
+            } else {
+                loadAnalysisData();
+            }
         } else {
             showToast(`업로드 실패: ${res.detail || '오류 발생'}`, 'ERROR');
         }

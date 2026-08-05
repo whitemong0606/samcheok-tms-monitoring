@@ -118,22 +118,28 @@ async def upload_file(file: UploadFile = File(...)):
 
         global UPLOADED_DATA
         UPLOADED_DATA["latest"] = df
+        UPLOADED_DATA["latest_5m"] = df
 
-        # 배출구별 결과 미리 분석
-        results = {}
-        outlets = df["outlet"].unique() if "outlet" in df.columns else ["배출구 1"]
-        
-        for outlet in outlets:
-            outlet_df = df[df["outlet"] == outlet] if "outlet" in df.columns else df
-            report = analyzer.generate_daily_report(outlet_df, str(outlet), datetime.now().strftime("%Y-%m-%d"))
-            results[str(outlet)] = report
+        outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+        reports = {}
+        all_alarms = []
+
+        for out in outlets:
+            out_df = df[df["outlet"] == out] if "outlet" in df.columns else pd.DataFrame()
+            rep = analyzer.generate_daily_report(out_df, out, "수동 엑셀 파일")
+            reports[out] = rep
+            if rep.get("raw_alarms"):
+                all_alarms.extend(rep["raw_alarms"])
 
         return {
             "success": True,
             "filename": file.filename,
             "total_rows": len(df),
             "detected_outlets": [str(o) for o in outlets],
-            "analysis_results": results
+            "outlets": outlets,
+            "reports": reports,
+            "all_alarms": all_alarms,
+            "series_5m": df.fillna(0).to_dict(orient="records")
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"파일 처리 중 오류: {str(e)}")
@@ -152,24 +158,6 @@ def get_analysis_data(
     
     start_dt_str = start_date or today_str
     end_dt_str = end_date or today_str
-
-    plant_name = "한국남부발전(주) 삼척빛드림본부"
-    region_name = "강원도 삼척시"
-    
-    df_5m, data_source = process_date_range_telemetry(start_dt_str, end_dt_str, plant_name, region_name, is_samcheok=True)
-    
-    UPLOADED_DATA["latest_5m"] = df_5m
-
-    outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
-    reports = {}
-    all_alarms = []
-
-    for out in outlets:
-        out_df = df_5m[df_5m["outlet"] == out]
-        rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
-        reports[out] = rep
-        if rep.get("raw_alarms"):
-            all_alarms.extend(rep["raw_alarms"])
 
     return {
         "success": True,
