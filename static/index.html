@@ -75,15 +75,20 @@
                             </label>
                         </div>
 
-                        <div class="outlet-selector-box" style="margin-top: 12px;">
-                            <label for="outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택 (요약 카드):</label>
-                            <select id="outlet-select" class="custom-select">
-                                <option value="배출구 1">배출구 1</option>
-                                <option value="배출구 2">배출구 2</option>
-                                <option value="배출구 3">배출구 3</option>
-                                <option value="배출구 4">배출구 4</option>
-                                <option value="배출구 5">배출구 5</option>
-                            </select>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 12px; flex-wrap: wrap; width: 100%;">
+                            <div class="outlet-selector-box">
+                                <label for="outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택 (요약 카드):</label>
+                                <select id="outlet-select" class="custom-select">
+                                    <option value="배출구 1">배출구 1</option>
+                                    <option value="배출구 2">배출구 2</option>
+                                    <option value="배출구 3">배출구 3</option>
+                                    <option value="배출구 4">배출구 4</option>
+                                    <option value="배출구 5">배출구 5</option>
+                                </select>
+                            </div>
+                            <button id="btn-process-upload" class="btn btn-emerald btn-sm" disabled style="opacity: 0.6; cursor: not-allowed;" title="파일 선택 후 이 버튼을 클릭하시면 엑셀 데이터 분석 및 차트 시각화가 실행됩니다">
+                                <i class="fa-solid fa-play"></i> 수동 엑셀 데이터 분석 및 시각화 실행
+                            </button>
                         </div>
                     </div>
 
@@ -240,8 +245,11 @@
                                         <option value="배출구 5">배출구 5</option>
                                     </select>
                                 </div>
-                                <button id="btn-auto-refresh" class="btn btn-emerald btn-sm">
-                                    <i class="fa-solid fa-rotate-right"></i> 구글 시트 30분 실측 새로고침
+                                <button id="btn-auto-fetch-api" class="btn btn-emerald btn-sm" title="CleanSYS Open API로부터 100% 실시간 수치를 가져와 구글 시트에 30분 누적 저장합니다">
+                                    <i class="fa-solid fa-cloud-arrow-down"></i> API 실측 수집 & 구글시트 저장
+                                </button>
+                                <button id="btn-auto-refresh" class="btn btn-secondary btn-sm" title="구글 시트에 누적 저장된 30분 데이터를 조회합니다">
+                                    <i class="fa-solid fa-rotate-right"></i> 30분 시트 새로고침
                                 </button>
                             </div>
                         </div>

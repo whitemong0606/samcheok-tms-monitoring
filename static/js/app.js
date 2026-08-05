@@ -41,11 +41,28 @@ function initTabs() {
 function initFileUpload() {
     const fileInput = document.getElementById('file-upload');
     const dropzone = document.getElementById('dropzone');
+    const processBtn = document.getElementById('btn-process-upload');
     if (!fileInput || !dropzone) return;
+
+    function handleFileSelected(file) {
+        if (!file) return;
+        window.selectedManualFile = file;
+        const textElem = dropzone.querySelector('.dropzone-text');
+        if (textElem) {
+            textElem.innerHTML = `<strong style="color: var(--accent-cyan); font-size: 1.05rem;"><i class="fa-solid fa-file-excel"></i> ${file.name}</strong><span style="color: #fef08a;">파일 인식 완료! 아래 [수동 엑셀 데이터 분석 및 시각화 실행] 버튼을 클릭하세요.</span>`;
+        }
+        if (processBtn) {
+            processBtn.disabled = false;
+            processBtn.style.opacity = '1.0';
+            processBtn.style.cursor = 'pointer';
+            processBtn.classList.add('pulse-glow');
+        }
+        showToast(`📄 파일 인식 완료: ${file.name}`);
+    }
 
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            uploadFile(e.target.files[0]);
+            handleFileSelected(e.target.files[0]);
         }
     });
 
@@ -62,16 +79,26 @@ function initFileUpload() {
         e.preventDefault();
         dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
         if (e.dataTransfer.files.length > 0) {
-            uploadFile(e.dataTransfer.files[0]);
+            handleFileSelected(e.dataTransfer.files[0]);
         }
     });
+
+    if (processBtn) {
+        processBtn.addEventListener('click', () => {
+            if (window.selectedManualFile) {
+                uploadFile(window.selectedManualFile);
+            } else {
+                showToast(`수동 업로드할 엑셀/CSV 파일을 먼저 선택해 주세요.`, 'WARNING');
+            }
+        });
+    }
 }
 
 async function uploadFile(file) {
     const formData = new FormData();
     formData.append('file', file);
 
-    showToast(`파일 업로드 중: ${file.name}`);
+    showToast(`🔄 엑셀 파일 수동 데이터 분석 처리 중: ${file.name}`);
     try {
         const response = await fetch('/api/upload', {
             method: 'POST',
@@ -79,7 +106,7 @@ async function uploadFile(file) {
         });
         const res = await response.json();
         if (res.success) {
-            showToast(`업로드 완료! 총 ${res.total_rows}개 데이터 가공 완료.`);
+            showToast(`✅ 업로드 완료! 총 ${res.total_rows}개 5분/30분 이력 데이터 분석 및 시각화 성공.`);
             loadAnalysisData();
         } else {
             showToast(`업로드 실패: ${res.detail || '오류 발생'}`, 'ERROR');
@@ -937,6 +964,25 @@ function initSubTabs() {
         loadAutoAnalysisData();
     });
 
+    const fetchApiBtn = document.getElementById('btn-auto-fetch-api');
+    if (fetchApiBtn) {
+        fetchApiBtn.addEventListener('click', async () => {
+            showToast('📡 CleanSYS 실시간 API 30분 실측 데이터 수집 및 구글 시트 저장 중...');
+            try {
+                const res = await fetch('/api/cron/fetch-30m');
+                const data = await res.json();
+                if (data.success) {
+                    showToast(`✅ 30분 실측 수집 성공! 총 ${data.rows_count}개 행이 구글 시트에 누적 저장되었습니다.`);
+                    loadAutoAnalysisData();
+                } else {
+                    showToast(`API 수집 오류: ${data.message || data.error}`, 'ERROR');
+                }
+            } catch (err) {
+                showToast(`API 수집 통신 오류: ${err.message}`, 'ERROR');
+            }
+        });
+    }
+
     const refreshBtn = document.getElementById('btn-auto-refresh');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
@@ -944,6 +990,20 @@ function initSubTabs() {
             loadAutoAnalysisData();
         });
     }
+
+    // 30분 자동 주기 타이머 (브라우저 열림 시 30분마다 API 수집 & 구글 시트 누적 실행)
+    setInterval(async () => {
+        const autoPane = document.getElementById('subpane-auto');
+        if (autoPane && autoPane.style.display !== 'none') {
+            console.log("[Auto30m] 30분 타이머 자동 API 수집 및 구글 시트 저장 실행");
+            try {
+                await fetch('/api/cron/fetch-30m');
+                loadAutoAnalysisData();
+            } catch (err) {
+                console.error("[Auto30m] 타이머 실행 오류:", err);
+            }
+        }
+    }, 30 * 60 * 1000);
 
     const autoOutletSelect = document.getElementById('auto-outlet-select');
     if (autoOutletSelect) {
