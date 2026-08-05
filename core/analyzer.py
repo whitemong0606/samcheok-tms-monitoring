@@ -34,9 +34,23 @@ class StackAnalyzer:
         - O2 <= 16.0% 이고 Temp/Flow 상승 -> '운전 (OPERATING)'
         """
         df = df.copy()
+        if df.empty:
+            df["State"] = []
+            return df
+
+        existing_state_col = next((c for c in df.columns if str(c).lower() in ["state", "상태", "운전상태", "구분"]), None)
         states = []
         
         for idx, row in df.iterrows():
+            if existing_state_col and pd.notna(row.get(existing_state_col)):
+                raw_st = str(row.get(existing_state_col)).strip()
+                if any(k in raw_st for k in ["정지", "STOP", "Stop", "stop", "보수", "불량"]):
+                    states.append("STOP")
+                    continue
+                elif any(k in raw_st for k in ["운전", "OPERATING", "Operating", "operating", "가동", "정상"]):
+                    states.append("OPERATING")
+                    continue
+
             o2 = row.get("O2", np.nan)
             temp = row.get("Temp", np.nan)
             flow = row.get("Flow", np.nan)
@@ -74,12 +88,15 @@ class StackAnalyzer:
         """
         단일 배출구에 대한 전체 상태 판별 및 5가지 이상 알람 조건 정밀 검증
         """
-        if df.empty:
-            return df, [AlarmEvent(datetime.now().strftime("%Y-%m-%d %H:%M"), outlet_name, "ALL", "MISSING_DATA", "데이터가 존재하지 않습니다.", "CRITICAL")]
+        if df.empty or "timestamp" not in df.columns:
+            empty_df = df.copy() if not df.empty else pd.DataFrame()
+            empty_df["State"] = []
+            return empty_df, [AlarmEvent(datetime.now().strftime("%Y-%m-%d %H:%M"), outlet_name, "ALL", "MISSING_DATA", "데이터가 존재하지 않습니다.", "CRITICAL")]
         
         df = df.sort_values(by="timestamp").reset_index(drop=True)
         df = self.classify_operating_state(df)
         
+        state_series = df["State"] if "State" in df.columns else pd.Series(["OPERATING"] * len(df))
         alarms: List[AlarmEvent] = []
         
         # 1. 데이터 수집 검증: 2시간(4회) 연속 결측 알람 (Missing Data)
@@ -109,7 +126,7 @@ class StackAnalyzer:
             # 2. 기준치 초과 알람 (Threshold Exceeded)
             limit = self.limits.get(factor)
             if limit is not None and factor in ["TSP", "NOX", "SOX"]:
-                exceeded_mask = (series > limit) & (df["State"] == "OPERATING")
+                exceeded_mask = (series > limit) & (state_series == "OPERATING")
                 for idx in df[exceeded_mask].index:
                     row = df.loc[idx]
                     alarms.append(AlarmEvent(
@@ -122,17 +139,15 @@ class StackAnalyzer:
                     ))
 
             # 3. 급변동(헌팅) 알람 (Hunting)
-            # 운전 중(OPERATING) 이며 유의미한 평균 수치가 존재하는 경우만 비교 (0.00 수치 제외)
             hunting_thresh = config.HUNTING_THRESHOLDS.get(factor, 0.5)
             rolling_avg = series.shift(1).rolling(window=12, min_periods=3).mean()
             
             for idx in range(len(df)):
                 val = series.iloc[idx]
                 avg = rolling_avg.iloc[idx]
-                state = df["State"].iloc[idx]
+                st_val = state_series.iloc[idx]
                 
-                # 운전 중이며 이전 평균이 0.5 이상으로 유의미한 경우에만 헌팅 알람 검사
-                if state == "OPERATING" and pd.notna(val) and pd.notna(avg) and avg >= 0.5:
+                if st_val == "OPERATING" and pd.notna(val) and pd.notna(avg) and avg >= 0.5:
                     rel_change = abs(val - avg) / avg
                     if rel_change >= hunting_thresh:
                         row = df.iloc[idx]
@@ -146,14 +161,12 @@ class StackAnalyzer:
                         ))
 
             # 4. 고정 데이터 알람 (Frozen Data)
-            # 10회 연속 동일한 값 지시 여부
-            # 단! SOX, NOX, TSP는 0이 아닌(non-zero) 상수값이 10회 고정될 때만 알람! (정지 중 0.00 고정은 정상)
             consecutive_count = 1
             last_val = None
             
             for idx in range(len(df)):
                 val = series.iloc[idx]
-                state = df["State"].iloc[idx]
+                st_val = state_series.iloc[idx]
                 row_time = str(df["timestamp"].iloc[idx])
                 
                 if pd.notna(val) and val == last_val:
@@ -164,7 +177,6 @@ class StackAnalyzer:
                     
                 if consecutive_count >= config.FROZEN_DATA_COUNT:
                     if factor in ["SOX", "NOX", "TSP"]:
-                        # 0을 제외한 0이 아닌 상수값 10회 고정 시에만 알람!
                         if val is not None and float(val) > 0.0:
                             alarms.append(AlarmEvent(
                                 timestamp=row_time,
@@ -175,7 +187,6 @@ class StackAnalyzer:
                                 level="WARNING"
                             ))
                     else:
-                        # O2, Flow, Temp 등 일반 물리 인자
                         alarms.append(AlarmEvent(
                             timestamp=row_time,
                             outlet=outlet_name,
@@ -185,9 +196,8 @@ class StackAnalyzer:
                             level="WARNING"
                         ))
             
-            # SOX/NOX 특수 규칙: 운전 중(OPERATING) 하루 종일 0.00 고정 시 센서 고장 알람
             if factor in ["SOX", "NOX"]:
-                op_df = df[df["State"] == "OPERATING"]
+                op_df = df[state_series == "OPERATING"]
                 if len(op_df) >= 20:
                     zero_ratio = (op_df[factor] == 0.0).mean()
                     if zero_ratio >= 0.95:
@@ -200,11 +210,8 @@ class StackAnalyzer:
                             level="WARNING"
                         ))
 
-
-
         # 5. 정지 중 이상 데이터 알람 (Stop-State Abnormal Data)
-        # 정지 상태(STOP)임에도 0이 아닌 이상치(고온/고유량 또는 높은 오염물질 > 0.00) 송출 시 발생
-        stop_df = df[df["State"] == "STOP"]
+        stop_df = df[state_series == "STOP"]
         for idx in stop_df.index:
             row = df.loc[idx]
             temp = float(row.get("Temp", 0.0))
@@ -213,7 +220,6 @@ class StackAnalyzer:
             sox = float(row.get("SOX", 0.0))
             tsp = float(row.get("TSP", 0.0))
             
-            # 정지 중 0이 아닌 수치(고온, 고유량 또는 0이 아닌 오염물질 발생) 감지
             abnormal_factors = []
             if temp > 80.0 and flow > 1000.0:
                 abnormal_factors.append(f"고온({temp:.1f}°C)/고유량({flow:.0f}m³/h)")
@@ -234,7 +240,6 @@ class StackAnalyzer:
                     level="WARNING"
                 ))
                 
-        # 중복 알람 제거 (타입, 배출구, 인자, 타임스탬프 기준)
         unique_alarms = []
         seen = set()
         for a in alarms:
@@ -251,8 +256,9 @@ class StackAnalyzer:
         """
         df_analyzed, alarms = self.analyze_stack(df, outlet_name)
         
-        op_df = df_analyzed[df_analyzed["State"] == "OPERATING"]
-        stop_df = df_analyzed[df_analyzed["State"] == "STOP"]
+        state_series = df_analyzed["State"] if not df_analyzed.empty and "State" in df_analyzed.columns else pd.Series([], dtype=str)
+        op_df = df_analyzed[state_series == "OPERATING"] if not df_analyzed.empty else pd.DataFrame()
+        stop_df = df_analyzed[state_series == "STOP"] if not df_analyzed.empty else pd.DataFrame()
         
         time_unit = 0.5 if len(df_analyzed) <= 48 else (1.0 / 12.0)
         op_hours = round(len(op_df) * time_unit, 1)

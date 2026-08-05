@@ -78,7 +78,13 @@ async def upload_file(file: UploadFile = File(...)):
         filename = file.filename.lower()
         
         if filename.endswith(".csv"):
-            df = pd.read_csv(io.BytesIO(contents))
+            try:
+                df = pd.read_csv(io.BytesIO(contents), encoding="utf-8")
+            except Exception:
+                try:
+                    df = pd.read_csv(io.BytesIO(contents), encoding="cp949")
+                except Exception:
+                    df = pd.read_csv(io.BytesIO(contents), encoding="euc-kr")
         elif filename.endswith(".xlsx") or filename.endswith(".xls"):
             df = pd.read_excel(io.BytesIO(contents))
         else:
