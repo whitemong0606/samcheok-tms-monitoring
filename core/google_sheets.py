@@ -63,119 +63,173 @@ class GoogleSheetsStorage:
             with open(self.fallback_file, "w", encoding="utf-8") as f:
                 json.dump(initial_data, f, ensure_ascii=False, indent=2)
 
-    def read_telemetry_data(self, date_str: str) -> Optional[pd.DataFrame]:
+    def read_telemetry_data(self, query_date_str: str) -> Optional[pd.DataFrame]:
         """
-        [구글 시트 우선 조회 Cache-First 로직]
-        일자별 시트 탭(YYYY-MM-DD)에서 강원도 삼척시 삼척빛드림본부의 수집 데이터를 읽어옴.
-        데이터가 이미 존재하면 DataFrame 반환, 없으면 None 반환.
+        [구글 시트 타임스탬프 기반 24시간 재구성 로직]
+        조회일(query_date_str, 예: 2026-08-05) 기준:
+        - 전일 탭(2026-08-04)에서 '2026-08-04 08:00:00' 이상 데이터 로드
+        - 당일 탭(2026-08-05)에서 '2026-08-05 08:00:00' 이하 데이터 로드
+        두 날짜 탭의 데이터를 합쳐 24시간 5분 시계열 재구성 반환.
         """
+        try:
+            query_dt = datetime.strptime(query_date_str, "%Y-%m-%d")
+            prev_date_str = (query_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+            
+            start_ts = f"{prev_date_str} 08:00:00"
+            end_ts = f"{query_date_str} 08:00:00"
+        except Exception:
+            return None
+
+        combined_rows = []
+
         if not self.spreadsheet:
             self._connect_sheets()
 
         if self.spreadsheet:
+            # 1. 전일 탭(YYYY-MM-DD)에서 08:00:00 이후 로드
             try:
-                # 해당 일자(YYYY-MM-DD) 이름의 탭 존재 여부 확인
-                worksheet = self.spreadsheet.worksheet(date_str)
-                records = worksheet.get_all_records()
-                if records and len(records) > 0:
-                    df = pd.DataFrame(records)
-                    # 삼척빛드림본부 전용 데이터만 필터링
-                    if "fact_manage_nm" in df.columns:
-                        samcheok_df = df[df["fact_manage_nm"].astype(str).str.contains("삼척|남부발전")]
-                        if not samcheok_df.empty:
-                            print(f"[GoogleSheetsStorage] 구글 시트 탭 [{date_str}]에서 삼척빛드림본부 데이터 {len(samcheok_df)}건 로드 성공!")
-                            return samcheok_df
-                    return df
-            except Exception as e:
-                print(f"[GoogleSheetsStorage] 시트 탭 [{date_str}] 조회 결과 없음 또는 오류: {e}")
+                ws_prev = self.spreadsheet.worksheet(prev_date_str)
+                recs_prev = ws_prev.get_all_records()
+                for r in recs_prev:
+                    ts = str(r.get("timestamp", ""))
+                    if ts >= start_ts:
+                        combined_rows.append(r)
+            except Exception:
+                pass
 
-        # Fallback 로컬 캐시 조회
+            # 2. 당일 탭(YYYY-MM-DD)에서 08:00:00 이전 로드
+            try:
+                ws_curr = self.spreadsheet.worksheet(query_date_str)
+                recs_curr = ws_curr.get_all_records()
+                for r in recs_curr:
+                    ts = str(r.get("timestamp", ""))
+                    if ts <= end_ts:
+                        combined_rows.append(r)
+            except Exception:
+                pass
+
+            if combined_rows:
+                df = pd.DataFrame(combined_rows)
+                if "fact_manage_nm" in df.columns:
+                    samcheok_df = df[df["fact_manage_nm"].astype(str).str.contains("삼척|남부발전")]
+                    if not samcheok_df.empty:
+                        print(f"[GoogleSheetsStorage] [{prev_date_str}] & [{query_date_str}] 탭에서 삼척 24h 데이터 {len(samcheok_df)}건 합성 성공!")
+                        return samcheok_df
+                return df
+
+        # 로컬 Fallback 캐시 조회
         try:
             with open(self.fallback_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-                cache = data.get("telemetry_cache", {}).get(date_str)
-                if cache:
-                    return pd.DataFrame(cache)
+                cache = data.get("telemetry_cache", {})
+                prev_rows = cache.get(prev_date_str, [])
+                curr_rows = cache.get(query_date_str, [])
+                
+                rows = [r for r in prev_rows if str(r.get("timestamp")) >= start_ts] + \
+                       [r for r in curr_rows if str(r.get("timestamp")) <= end_ts]
+                if rows:
+                    return pd.DataFrame(rows)
         except Exception:
             pass
 
         return None
 
-    def append_telemetry_data(self, df: pd.DataFrame, date_str: Optional[str] = None) -> bool:
+    def append_telemetry_data(self, df: pd.DataFrame, query_date_str: Optional[str] = None) -> bool:
         """
-        [강원도 삼척시 삼척빛드림본부 전용 저장]
-        일자별 시트 탭(YYYY-MM-DD)을 자동 생성하여 5분 단위 측정 데이터를 분리 저장
+        [실제 타임스탬프 날짜별 탭 분리 저장 로직]
+        24시간 수집 데이터(예: 8/4 08:00 ~ 8/5 08:00)를 타임스탬프의 실제 날짜별로 그룹화:
+        - 8/4 08:00 ~ 23:55 데이터 -> '2026-08-04' 시트 탭에 저장
+        - 8/5 00:00 ~ 07:55 데이터 -> '2026-08-05' 시트 탭에 저장
         """
-        if df.empty:
+        if df.empty or "timestamp" not in df.columns:
             return False
 
-        if not date_str:
-            date_str = datetime.now(KST).strftime("%Y-%m-%d")
-
-        # 삼척빛드림본부 데이터만 좁혀서 필터링 (비효율적 전수 저장 방지)
+        # 삼척빛드림본부 데이터로 필터링
         samcheok_df = df.copy()
         if "fact_manage_nm" in samcheok_df.columns:
             samcheok_df["fact_manage_nm"] = "한국남부발전(주) 삼척빛드림본부"
             samcheok_df["area_nm"] = "강원도 삼척시"
 
-        records = samcheok_df.fillna(0).to_dict(orient="records")
+        # 타임스탬프의 실제 YYYY-MM-DD 날짜별로 그룹화
+        samcheok_df["actual_date"] = samcheok_df["timestamp"].astype(str).str.slice(0, 10)
+        grouped = samcheok_df.groupby("actual_date")
 
-        # 로컬 Fallback 캐시 저장
-        try:
-            with open(self.fallback_file, "r", encoding="utf-8") as f:
-                fallback_data = json.load(f)
-            if "telemetry_cache" not in fallback_data:
-                fallback_data["telemetry_cache"] = {}
-            fallback_data["telemetry_cache"][date_str] = records
-            with open(self.fallback_file, "w", encoding="utf-8") as f:
-                json.dump(fallback_data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            print(f"[GoogleSheetsStorage] 로컬 캐시 저장 오류: {e}")
+        header = ["timestamp", "outlet", "fact_manage_nm", "area_nm", "TSP", "NOX", "SOX", "O2", "Flow", "Temp"]
 
         if not self.spreadsheet:
             self._connect_sheets()
 
-        if self.spreadsheet:
+        success_any = False
+
+        for date_tab, group_df in grouped:
+            records = group_df.drop(columns=["actual_date"], errors="ignore").fillna(0).to_dict(orient="records")
+
+            # 로컬 Fallback 캐시 업데이트
             try:
-                # 일자별 탭(YYYY-MM-DD) 가져오기 또는 새로 생성
-                try:
-                    worksheet = self.spreadsheet.worksheet(date_str)
-                except Exception:
-                    print(f"[GoogleSheetsStorage] 일자별 새 시트 탭 [{date_str}] 생성 완료")
-                    worksheet = self.spreadsheet.add_worksheet(title=date_str, rows=1500, cols=12)
-                    header = ["timestamp", "outlet", "fact_manage_nm", "area_nm", "TSP", "NOX", "SOX", "O2", "Flow", "Temp"]
-                    worksheet.append_row(header)
-
-                # 기존 내용 클리어 후 헤더와 데이터 갱신
-                worksheet.clear()
-                header = ["timestamp", "outlet", "fact_manage_nm", "area_nm", "TSP", "NOX", "SOX", "O2", "Flow", "Temp"]
-                worksheet.append_row(header)
-
-                rows_to_insert = []
-                for r in records:
-                    rows_to_insert.append([
-                        str(r.get("timestamp", "")),
-                        str(r.get("outlet", "")),
-                        str(r.get("fact_manage_nm", "한국남부발전(주) 삼척빛드림본부")),
-                        str(r.get("area_nm", "강원도 삼척시")),
-                        float(r.get("TSP", 0.0)),
-                        float(r.get("NOX", 0.0)),
-                        float(r.get("SOX", 0.0)),
-                        float(r.get("O2", 0.0)),
-                        float(r.get("Flow", 0.0)),
-                        float(r.get("Temp", 0.0))
-                    ])
+                with open(self.fallback_file, "r", encoding="utf-8") as f:
+                    fallback_data = json.load(f)
+                if "telemetry_cache" not in fallback_data:
+                    fallback_data["telemetry_cache"] = {}
                 
-                worksheet.append_rows(rows_to_insert)
-                print(f"[GoogleSheetsStorage] 구글 시트 일자별 탭 [{date_str}]에 데이터 {len(rows_to_insert)}건 저장 성공!")
-                return True
+                # 해당 날짜 탭의 기존 캐시와 병합
+                existing_records = fallback_data["telemetry_cache"].get(date_tab, [])
+                existing_map = {r["timestamp"] + "_" + r["outlet"]: r for r in existing_records}
+                for r in records:
+                    key = str(r.get("timestamp")) + "_" + str(r.get("outlet"))
+                    existing_map[key] = r
+                
+                fallback_data["telemetry_cache"][date_tab] = list(existing_map.values())
+                with open(self.fallback_file, "w", encoding="utf-8") as f:
+                    json.dump(fallback_data, f, ensure_ascii=False, indent=2)
             except Exception as e:
-                print(f"[GoogleSheetsStorage] 구글 시트 데이터 저장 오류: {e}")
+                print(f"[GoogleSheetsStorage] 로컬 캐시 업데이트 오류: {e}")
 
-        return False
+            if self.spreadsheet:
+                try:
+                    # 해당 실제 날짜(YYYY-MM-DD) 탭 가져오기 또는 새로 생성
+                    try:
+                        worksheet = self.spreadsheet.worksheet(date_tab)
+                    except Exception:
+                        print(f"[GoogleSheetsStorage] 실제 날짜 시트 탭 [{date_tab}] 새로 생성")
+                        worksheet = self.spreadsheet.add_worksheet(title=date_tab, rows=2000, cols=12)
+                        worksheet.append_row(header)
+
+                    # 기존 데이터 읽어와 중복 방지 병합 (upsert)
+                    existing_recs = []
+                    try:
+                        existing_recs = worksheet.get_all_records()
+                    except Exception:
+                        pass
+
+                    existing_keys = {f"{r.get('timestamp')}_{r.get('outlet')}" for r in existing_recs}
+                    
+                    rows_to_insert = []
+                    for r in records:
+                        key = f"{r.get('timestamp')}_{r.get('outlet')}"
+                        if key not in existing_keys:
+                            rows_to_insert.append([
+                                str(r.get("timestamp", "")),
+                                str(r.get("outlet", "")),
+                                str(r.get("fact_manage_nm", "한국남부발전(주) 삼척빛드림본부")),
+                                str(r.get("area_nm", "강원도 삼척시")),
+                                float(r.get("TSP", 0.0)),
+                                float(r.get("NOX", 0.0)),
+                                float(r.get("SOX", 0.0)),
+                                float(r.get("O2", 0.0)),
+                                float(r.get("Flow", 0.0)),
+                                float(r.get("Temp", 0.0))
+                            ])
+
+                    if rows_to_insert:
+                        worksheet.append_rows(rows_to_insert)
+                        print(f"[GoogleSheetsStorage] 실제 날짜 탭 [{date_tab}]에 신규 데이터 {len(rows_to_insert)}건 추가 완료!")
+                    success_any = True
+                except Exception as e:
+                    print(f"[GoogleSheetsStorage] 탭 [{date_tab}] 추가 중 오류: {e}")
+
+        return success_any
 
     def save_daily_report(self, report: Dict[str, Any]) -> bool:
-        """일일 요약 리포트 저장"""
         date_str = report.get("date", datetime.now(KST).strftime("%Y-%m-%d"))
         if not self.spreadsheet:
             self._connect_sheets()
@@ -205,7 +259,6 @@ class GoogleSheetsStorage:
         return False
 
     def get_settings(self) -> Dict[str, Any]:
-        """설정 조회 (Google Sheets 또는 Fallback)"""
         if self.spreadsheet:
             try:
                 worksheet = self.spreadsheet.worksheet("Settings")
@@ -228,7 +281,6 @@ class GoogleSheetsStorage:
             return data.get("settings", {})
 
     def save_settings(self, new_settings: Dict[str, Any]) -> bool:
-        """설정 저장"""
         with open(self.fallback_file, "r", encoding="utf-8") as f:
             data = json.load(f)
             
