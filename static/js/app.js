@@ -542,9 +542,65 @@ function renderIntegratedChart(series5m, param) {
     // 날짜 범위 및 멀티일자 여부 판별
     const dateSet = new Set(rawTimestamps.map(ts => ts.substring(0, 10)));
     const isMultiDay = dateSet.size > 1;
+    const isThreeDaysOrMore = dateSet.size >= 3;
+
+    let chartSeriesData = series5m;
+    let chartTimestamps = rawTimestamps;
+
+    // 3일 이상 복수 날짜 조회 시: 30분 간격 리샘플링 적용 (평균값 계산)
+    if (isThreeDaysOrMore) {
+        chartSeriesData = [];
+        chartTimestamps = [];
+
+        // 30분 단위 그룹 키 생성 (예: '2026-08-01 14:15:00' -> '2026-08-01 14:00')
+        const get30mKey = (ts) => {
+            if (!ts) return '';
+            const dtStr = ts.substring(0, 14); // 'YYYY-MM-DD HH:'
+            const minute = parseInt(ts.substring(14, 16), 10);
+            const slot = minute < 30 ? '00' : '30';
+            return `${dtStr}${slot}`;
+        };
+
+        const grouped = {};
+        series5m.forEach(item => {
+            const key = `${get30mKey(item.timestamp)}_${item.outlet}`;
+            if (!grouped[key]) {
+                grouped[key] = {
+                    key: get30mKey(item.timestamp),
+                    outlet: item.outlet,
+                    TSP: [], NOX: [], SOX: [], O2: [], Flow: [], Temp: []
+                };
+            }
+            if (item.TSP !== undefined) grouped[key].TSP.push(item.TSP);
+            if (item.NOX !== undefined) grouped[key].NOX.push(item.NOX);
+            if (item.SOX !== undefined) grouped[key].SOX.push(item.SOX);
+            if (item.O2 !== undefined) grouped[key].O2.push(item.O2);
+            if (item.Flow !== undefined) grouped[key].Flow.push(item.Flow);
+            if (item.Temp !== undefined) grouped[key].Temp.push(item.Temp);
+        });
+
+        const mean = arr => arr.length > 0 ? arr.reduce((a, b) => a + b, 0) / arr.length : 0;
+
+        Object.values(grouped).forEach(g => {
+            chartSeriesData.push({
+                timestamp: `${g.key}:00`,
+                outlet: g.outlet,
+                TSP: mean(g.TSP),
+                NOX: mean(g.NOX),
+                SOX: mean(g.SOX),
+                O2: mean(g.O2),
+                Flow: mean(g.Flow),
+                Temp: mean(g.Temp)
+            });
+        });
+
+        chartSeriesData.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+        const stack130mData = chartSeriesData.filter(s => s.outlet === "배출구 1");
+        chartTimestamps = stack130mData.map(s => s.timestamp);
+    }
 
     // X축 라벨 포맷팅: 단일일자인 경우 HH:mm, 다중일자인 경우 MM/DD HH:mm
-    const timeLabels = rawTimestamps.map(ts => {
+    const timeLabels = chartTimestamps.map(ts => {
         if (!ts) return '';
         if (isMultiDay) {
             const parts = ts.split(' ');
@@ -560,11 +616,12 @@ function renderIntegratedChart(series5m, param) {
     if (dateRangeSpan && rawTimestamps.length > 0) {
         const firstDate = rawTimestamps[0].substring(0, 10).replace(/-/g, '.');
         const lastDate = rawTimestamps[rawTimestamps.length - 1].substring(0, 10).replace(/-/g, '.');
-        dateRangeSpan.textContent = `(${firstDate} ~ ${lastDate})`;
+        const intervalNotice = isThreeDaysOrMore ? ' [30분 간격 트렌드]' : ' [5분 간격]';
+        dateRangeSpan.textContent = `(${firstDate} ~ ${lastDate})${intervalNotice}`;
     }
 
     const datasets = outlets.map(out => {
-        const outData = series5m.filter(s => s.outlet === out);
+        const outData = chartSeriesData.filter(s => s.outlet === out);
         const values = outData.map(s => s[param] !== undefined ? s[param] : 0);
 
         return {
@@ -573,8 +630,8 @@ function renderIntegratedChart(series5m, param) {
             borderColor: colors[out],
             backgroundColor: 'transparent',
             tension: 0.25,
-            borderWidth: 2,
-            pointRadius: 1,
+            borderWidth: isThreeDaysOrMore ? 1.5 : 2,
+            pointRadius: isThreeDaysOrMore ? 0.5 : 1,
             pointHoverRadius: 5
         };
     });

@@ -59,29 +59,33 @@ class CleanSysAPIClient:
 
     def generate_24h_telemetry(self, fact_manage_nm: str = "한국남부발전", area_nm: str = "강원도", target_date_str: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict[str, Any]]]:
         """
-        특정 일자(또는 오늘 KST) 기준 24시간(전일 08:00 ~ 지정일 08:00) 5분 및 30분 데이터 생성 & 검증
+        1) target_date_str 지정 시: 달력 지정일 (00:00:00 ~ 23:55:00, 24h) 기준 생성
+        2) 미지정 시: 실시간 KST (전일 08:00 ~ 금일 08:00, 24h) 기준 생성
         """
         if target_date_str:
             try:
-                today_08_kst = datetime.strptime(target_date_str, "%Y-%m-%d").replace(hour=8, minute=0, second=0, microsecond=0, tzinfo=KST)
+                start_kst = datetime.strptime(target_date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=KST)
             except Exception:
-                today_08_kst = datetime.now(KST).replace(hour=8, minute=0, second=0, microsecond=0)
+                now_kst = datetime.now(KST)
+                today_08_kst = now_kst.replace(hour=8, minute=0, second=0, microsecond=0)
+                if now_kst < today_08_kst:
+                    today_08_kst = today_08_kst - timedelta(days=1)
+                start_kst = today_08_kst - timedelta(days=1)
         else:
             now_kst = datetime.now(KST)
             today_08_kst = now_kst.replace(hour=8, minute=0, second=0, microsecond=0)
             if now_kst < today_08_kst:
                 today_08_kst = today_08_kst - timedelta(days=1)
-            
-        yesterday_08_kst = today_08_kst - timedelta(days=1)
+            start_kst = today_08_kst - timedelta(days=1)
 
-        timestamps_5m = [yesterday_08_kst + timedelta(minutes=5 * i) for i in range(288)]
-        timestamps_30m = [yesterday_08_kst + timedelta(minutes=30 * i) for i in range(48)]
+        timestamps_5m = [start_kst + timedelta(minutes=5 * i) for i in range(288)]
+        timestamps_30m = [start_kst + timedelta(minutes=30 * i) for i in range(48)]
 
         rows_5m = []
         rows_30m = []
         validation_logs = []
 
-        np.random.seed(int(today_08_kst.timestamp()) % 1000000)
+        np.random.seed(int(start_kst.timestamp()) % 1000000)
 
         for stack_num in range(1, 6):
             outlet_id = f"배출구 {stack_num}"
