@@ -1,5 +1,6 @@
 import os
 import json
+import tempfile
 import pandas as pd
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
@@ -13,7 +14,9 @@ class GoogleSheetsStorage:
         self.sheet_id = os.getenv("GOOGLE_SHEET_ID") or config.GOOGLE_SHEET_ID
         self.client = None
         self.spreadsheet = None
-        self.fallback_file = os.path.join(os.path.dirname(__file__), "storage_fallback.json")
+        
+        # Vercel Serverless 환경 대응: /tmp 디렉토리 사용 (Read-only filesystem 에러 방지)
+        self.fallback_file = os.path.join(tempfile.gettempdir(), "storage_fallback.json")
         
         # 로컬 데이터 초기화
         self._init_local_fallback()
