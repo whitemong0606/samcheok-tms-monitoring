@@ -244,23 +244,49 @@ def cron_check_stacks():
 @app.get("/api/cron/daily-report")
 def cron_daily_report():
     """
-    일일 리포트 Vercel Cron 스케줄러 (지정 시각 자동 실행)
+    하루 1회 자동 실행 CRON 스케줄러 (매일 08:00 KST):
+    1. CleanSYS Open API 전일 08:00 ~ 금일 08:00 24시간 5분 데이터 수집
+    2. 구글 워크스페이스(Google Sheets)에 5분 데이터 및 일일 요약 자동 저장
+    3. 텔레그램 일일 리포트 자동 발송
     """
     try:
+        plant_name = "한국남부발전(주) 삼척빛드림본부"
+        region_name = "강원도"
+        
+        # 1. 24시간 5분 및 30분 데이터 자동 수집
+        df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
+        
         global UPLOADED_DATA
-        df = UPLOADED_DATA.get("latest")
-        if df is None or df.empty:
-            df = simulator.generate_mock_telemetry("배출구 1")
+        UPLOADED_DATA["latest_5m"] = df_5m
+        UPLOADED_DATA["latest_30m"] = df_30m
+        
+        date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
 
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        report = analyzer.generate_daily_report(df, "배출구 1", date_str)
-        msg = telegram_bot.render_template(report)
-        res = telegram_bot.send_message(msg)
+        # 2. 구글 워크스페이스(Google Sheets) 5분 수집 데이터 자동 저장
+        sheets_save_result = storage.append_telemetry_data(df_5m)
+        
+        # 각 배출구별 일일 요약 리포트 저장 및 텔레그램 발송 메시지 생성
+        outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+        reports_sent = []
+
+        for out in outlets:
+            out_df = df_5m[df_5m["outlet"] == out]
+            rep = analyzer.generate_daily_report(out_df, out, date_str)
+            
+            # 구글 시트에 배출구별 요약 저장
+            storage.save_daily_report(rep)
+            
+            # 텔레그램 발송
+            msg = telegram_bot.render_template(rep)
+            telegram_res = telegram_bot.send_message(msg)
+            reports_sent.append({"outlet": out, "telegram_status": telegram_res.get("status")})
 
         return {
             "success": True,
             "report_date": date_str,
-            "send_result": res
+            "items_count_5m": len(df_5m),
+            "google_sheets_saved": sheets_save_result,
+            "outlets_processed": reports_sent
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": f"일일 자동 수집 및 구글 시트 저장 오류: {str(e)}"}
