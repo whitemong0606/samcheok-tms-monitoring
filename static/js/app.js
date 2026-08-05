@@ -19,6 +19,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function initDatePickers() {
     const startInput = document.getElementById('date-start');
     const endInput = document.getElementById('date-end');
+    const btnQuick24h = document.getElementById('btn-quick-24h');
     if (!startInput || !endInput) return;
 
     const today = new Date();
@@ -35,8 +36,34 @@ function initDatePickers() {
     startInput.value = formatDate(yesterday);
     endInput.value = formatDate(today);
 
+    // 날짜 입력창 클릭 시 브라우저 네이티브 달력 팝업 오픈 지원
+    const triggerPicker = (inputEl) => {
+        if (inputEl && typeof inputEl.showPicker === 'function') {
+            try { inputEl.showPicker(); } catch (e) {}
+        }
+    };
+
+    startInput.addEventListener('click', () => triggerPicker(startInput));
+    endInput.addEventListener('click', () => triggerPicker(endInput));
+
     startInput.addEventListener('change', () => loadAnalysisData());
     endInput.addEventListener('change', () => loadAnalysisData());
+
+    // '24시간 데이터 조회' 전용 버튼 클릭 시: 전일 08:00 ~ 금일 08:00 날짜 리셋 후 수집 실행
+    if (btnQuick24h) {
+        btnQuick24h.addEventListener('click', () => {
+            startInput.value = formatDate(yesterday);
+            endInput.value = formatDate(today);
+            showToast("⏱️ [전일 08:00 ~ 금일 08:00] 24시간 실시간 데이터를 조회합니다.");
+            
+            const btnFetch = document.getElementById('btn-fetch-cleansys');
+            if (btnFetch) {
+                btnFetch.click();
+            } else {
+                loadAnalysisData();
+            }
+        });
+    }
 }
 
 // 2-1. CleanSYS Open API Cascade Combo Box Selection & Date Range Fetch

@@ -717,3 +717,26 @@ td.cell-alarm-warning {
     transform: translateY(20px);
     pointer-events: none;
 }
+
+/* Date Picker Calendar Popup & Input Styles */
+.date-picker-input {
+    background-color: rgba(15, 23, 42, 0.9) !important;
+    color: #f8fafc !important;
+    border: 1px solid rgba(255, 255, 255, 0.2) !important;
+    border-radius: 6px !important;
+    padding: 5px 8px !important;
+    font-size: 0.85rem !important;
+    min-width: 148px !important;
+    box-sizing: border-box !important;
+}
+
+.date-picker-input::-webkit-calendar-picker-indicator {
+    filter: invert(0.85) sepia(1) saturate(5) hue-rotate(175deg);
+    cursor: pointer;
+    opacity: 0.9;
+}
+
+.date-picker-input::-webkit-calendar-picker-indicator:hover {
+    opacity: 1.0;
+    transform: scale(1.1);
+}

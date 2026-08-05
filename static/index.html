@@ -62,7 +62,7 @@
 
                     <!-- CleanSYS Open API Cascade Combo Box Selection -->
                     <div class="cleansys-api-section">
-                        <div class="api-inputs-row">
+                        <div class="api-inputs-row" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                             <select id="combo-region" class="custom-select custom-select-sm" title="지역 선택">
                                 <option value="강원도">강원도</option>
                             </select>
@@ -75,11 +75,16 @@
 
                             <!-- Date Range Controls -->
                             <div class="date-range-box" style="display: flex; align-items: center; gap: 6px;">
-                                <label for="date-start" style="font-size: 0.8rem; color: var(--text-secondary);"><i class="fa-regular fa-calendar-days"></i> 기간:</label>
-                                <input type="date" id="date-start" class="custom-select custom-select-sm" style="width: 130px;" title="조회 시작일">
+                                <label for="date-start" style="font-size: 0.82rem; color: var(--text-secondary); white-space: nowrap;"><i class="fa-regular fa-calendar-days"></i> 기간:</label>
+                                <input type="date" id="date-start" class="custom-select custom-select-sm date-picker-input" style="min-width: 148px; cursor: pointer;" title="조회 시작일 (클릭 시 달력 팝업)">
                                 <span style="color: var(--text-secondary);">~</span>
-                                <input type="date" id="date-end" class="custom-select custom-select-sm" style="width: 130px;" title="조회 종료일">
+                                <input type="date" id="date-end" class="custom-select custom-select-sm date-picker-input" style="min-width: 148px; cursor: pointer;" title="조회 종료일 (클릭 시 달력 팝업)">
                             </div>
+
+                            <!-- Quick 24h Data Fetch Button -->
+                            <button id="btn-quick-24h" class="btn btn-secondary btn-sm" title="전일 08:00 ~ 금일 08:00 24시간 데이터 조회를 바로 실행합니다">
+                                <i class="fa-solid fa-clock-rotate-left"></i> 24시간 데이터 조회
+                            </button>
 
                             <button id="btn-fetch-cleansys" class="btn btn-accent btn-sm">
                                 <i class="fa-solid fa-cloud-down"></i> API 데이터 수집
