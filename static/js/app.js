@@ -4,171 +4,42 @@ document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initFileUpload();
     initCleanSysAPI();
+    initDatePickers();
     initOutletSelector();
     initSettings();
     initSimulation();
     initLogs();
     
     // 최초 데이터 로드
-    loadAnalysisData('배출구 1');
+    loadAnalysisData();
     loadSettings();
     loadLogs();
 });
 
-// 1. Tab Navigation
-function initTabs() {
-    const tabs = document.querySelectorAll('.nav-tab');
-    tabs.forEach(tab => {
-        tab.addEventListener('click', () => {
-            tabs.forEach(t => t.classList.remove('active'));
-            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
-            
-            tab.classList.add('active');
-            const target = tab.dataset.tab;
-            document.getElementById(target).classList.add('active');
+function initDatePickers() {
+    const startInput = document.getElementById('date-start');
+    const endInput = document.getElementById('date-end');
+    if (!startInput || !endInput) return;
 
-            if (target === 'tab-settings') {
-                loadSettings();
-                loadLogs();
-            }
-        });
-    });
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(today.getDate() - 1);
+
+    const formatDate = (d) => {
+        const year = d.getFullYear();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+
+    startInput.value = formatDate(yesterday);
+    endInput.value = formatDate(today);
+
+    startInput.addEventListener('change', () => loadAnalysisData());
+    endInput.addEventListener('change', () => loadAnalysisData());
 }
 
-// 2. File Drag & Drop Upload
-function initFileUpload() {
-    const fileInput = document.getElementById('file-upload');
-    const dropzone = document.getElementById('dropzone');
-
-    fileInput.addEventListener('change', (e) => {
-        if (e.target.files.length > 0) {
-            uploadFile(e.target.files[0]);
-        }
-    });
-
-    dropzone.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        dropzone.style.borderColor = 'var(--accent-cyan)';
-    });
-
-    dropzone.addEventListener('dragleave', () => {
-        dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-    });
-
-    dropzone.addEventListener('drop', (e) => {
-        e.preventDefault();
-        dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
-        if (e.dataTransfer.files.length > 0) {
-            uploadFile(e.dataTransfer.files[0]);
-        }
-    });
-}
-
-async function uploadFile(file) {
-    const formData = new FormData();
-    formData.append('file', file);
-
-    showToast(`파일 업로드 중: ${file.name}`);
-    try {
-        const response = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData
-        });
-        const res = await response.json();
-        if (res.success) {
-            showToast(`업로드 완료! 총 ${res.total_rows}개 데이터 가공 완료.`);
-            const currentOutlet = document.getElementById('outlet-select').value;
-            loadAnalysisData(currentOutlet);
-        } else {
-            showToast(`업로드 실패: ${res.detail || '오류 발생'}`, 'ERROR');
-        }
-    } catch (err) {
-        showToast(`업로드 에러: ${err.message}`, 'ERROR');
-    }
-}
-
-const PLANT_REGISTRY_DATA = {
-    "강원도": {
-        "삼척시": ["한국남부발전(주) 삼척빛드림본부", "삼척시 자원회수시설"],
-        "강릉시": ["한국남부발전(주) 강릉발전본부", "강릉시 자원순환센터"],
-        "동해시": ["한국동서발전(주) 동해발전본부", "쌍용C&E(주) 동해공장"],
-        "원주시": ["원주시 자원정보센터"],
-        "춘천시": ["춘천시 자원순환센터"]
-    },
-    "서울특별시": {
-        "강남구": ["강남자원회수시설"],
-        "노원구": ["노원자원회수시설"],
-        "마포구": ["마포자원회수시설"],
-        "양천구": ["양천자원회수시설"]
-    },
-    "경기도": {
-        "평택시": ["한국서부발전(주) 평택발전본부"],
-        "화성시": ["화성시 환경자원센터"],
-        "용인시": ["용인시 환경센터"],
-        "성남시": ["성남자원회수시설"],
-        "수원시": ["수원시 자원회수시설"],
-        "부천시": ["부천시 자원순환센터"]
-    },
-    "충청남도": {
-        "보령시": ["한국중부발전(주) 보령발전본부"],
-        "태안군": ["한국서부발전(주) 태안발전본부"],
-        "당진시": ["한국동서발전(주) 당진발전본부"],
-        "서천군": ["한국중부발전(주) 신서천발전본부"]
-    },
-    "충청북도": {
-        "청주시": ["청주시 자원관리시설"],
-        "충주시": ["충주시 클린에너지파크"]
-    },
-    "인천광역시": {
-        "서구": ["한국남부발전(주) 신인천빛드림본부", "한국중부발전(주) 인천발전본부", "청라자원회수시설"],
-        "연수구": ["송도자원회수시설"]
-    },
-    "경상남도": {
-        "하동군": ["한국남부발전(주) 하동빛드림본부"],
-        "고성군": ["한국남부발전(주) 고성하일발전"],
-        "창원시": ["창원시 성산자원회수시설"]
-    },
-    "경상북도": {
-        "포항시": ["포항시 자원순환시설"],
-        "경주시": ["경주시 자원회수시설"],
-        "구미시": ["구미시 환경자원화시설"]
-    },
-    "전라남도": {
-        "여수시": ["한국남동발전(주) 여수발전본부"],
-        "순천시": ["순천시 자원순환센터"],
-        "광양시": ["광양시 자원화시설"]
-    },
-    "전라북도": {
-        "전주시": ["전주시 광역자원음식물류폐기물 처리시설"],
-        "군산시": ["군산시 폐기물처리시설"]
-    },
-    "부산광역시": {
-        "사하구": ["한국남부발전(주) 부산빛드림본부"],
-        "해운대구": ["해운대 자원회수시설"],
-        "강서구": ["부산시 생곡자원순환타운"]
-    },
-    "울산광역시": {
-        "남구": ["한국동서발전(주) 울산발전본부", "울산성암자원회수시설"]
-    },
-    "대구광역시": {
-        "달서구": ["대구시 성서자원회수시설"]
-    },
-    "광주광역시": {
-        "서구": ["광주시 가열성폐기물 연료화시설"]
-    },
-    "대전광역시": {
-        "대덕구": ["대전시 신일동 자원회수시설"]
-    },
-    "세종특별자치시": {
-        "세종시": ["세종시 수질복원센터"]
-    },
-    "제주특별자치도": {
-        "제주시": ["제주 봉개자원회수시설"],
-        "서귀포시": ["서귀포시 색달자원회수시설"]
-    }
-};
-
-// 2-1. CleanSYS Open API Cascade Combo Box Selection
+// 2-1. CleanSYS Open API Cascade Combo Box Selection & Date Range Fetch
 function initCleanSysAPI() {
     populateRegions();
 
@@ -189,6 +60,8 @@ function initCleanSysAPI() {
         const region = regionSelect.value;
         const subregion = subregionSelect.value;
         const plant = plantSelect.value;
+        const startDate = document.getElementById('date-start').value;
+        const endDate = document.getElementById('date-end').value;
 
         let searchPlant = plant;
         if (plant.includes("한국남부발전")) searchPlant = "한국남부발전";
@@ -197,11 +70,13 @@ function initCleanSysAPI() {
         else if (plant.includes("한국중부발전")) searchPlant = "한국중부발전";
         else if (plant.includes("한국남동발전")) searchPlant = "한국남동발전";
 
-        showToast(`📡 [${region} ${subregion}] ${plant} API 실시간 데이터 수집 중...`);
+        showToast(`📡 [${region} ${subregion}] ${plant} (${startDate} ~ ${endDate}) 데이터 수집 중...`);
 
         const formData = new FormData();
         formData.append('area_nm', region);
         formData.append('fact_manage_nm', searchPlant);
+        formData.append('start_date', startDate);
+        formData.append('end_date', endDate);
 
         try {
             const res = await fetch('/api/cleansys/fetch', {
@@ -310,7 +185,14 @@ let CURRENT_PARAM = 'TSP';
 // 4. Load & Render Analysis Data (All 5 Outlets Integrated)
 async function loadAnalysisData() {
     try {
-        const res = await fetch('/api/analysis');
+        const startInput = document.getElementById('date-start');
+        const endInput = document.getElementById('date-end');
+        let queryParams = '';
+        if (startInput && endInput && startInput.value && endInput.value) {
+            queryParams = `?start_date=${encodeURIComponent(startInput.value)}&end_date=${encodeURIComponent(endInput.value)}`;
+        }
+
+        const res = await fetch(`/api/analysis${queryParams}`);
         const data = await res.json();
         
         if (data.success) {
@@ -370,13 +252,11 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
         return;
     }
 
-    // 알람 맵핑 (timestamp + outlet + factor -> level)
     const alarmMap = {};
     if (alarms) {
         alarms.forEach(a => {
             const key = `${a.timestamp}_${a.outlet}_${a.factor}`;
             alarmMap[key] = a.level;
-            // 인자가 ALL 이거나 STOP_MONITOR 일 경우
             if (a.factor === 'ALL' || a.factor === 'STOP_MONITOR') {
                 alarmMap[`${a.timestamp}_${a.outlet}_ALL`] = a.level;
             }
@@ -388,7 +268,6 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
         filtered = series5m.filter(s => s.outlet === filterOutlet);
     }
 
-    // 표 생성을 위한 DocumentFragment
     const fragment = document.createDocumentFragment();
 
     filtered.forEach(row => {
@@ -398,7 +277,6 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
         const state = row.O2 >= 19.5 ? '정지' : '운전';
         const stateBadge = state === '정지' ? '<span class="badge badge-secondary">정지</span>' : '<span class="badge badge-success">운전</span>';
 
-        // 각 인자별 알람 클래스 검출
         function getCellClass(factor) {
             const level = alarmMap[`${ts}_${out}_${factor}`] || alarmMap[`${ts}_${out}_ALL`];
             if (level === 'CRITICAL') return 'cell-alarm-critical';
@@ -478,12 +356,26 @@ function renderIntegratedChart(series5m, param) {
         "배출구 5": "#f43f5e"  // Rose
     };
 
-    // 타임스탬프 원본 및 시간 전용 포맷팅 (시인성 최적화: "15:30")
     const stack1Data = series5m.filter(s => s.outlet === "배출구 1");
     const rawTimestamps = stack1Data.map(s => s.timestamp || '');
-    const timeLabels = rawTimestamps.map(ts => ts ? ts.substring(11, 16) : '');
 
-    // 날짜 범위 동적 추출 (예: "(2026.08.04 ~ 2026.08.05)")
+    // 날짜 범위 및 멀티일자 여부 판별
+    const dateSet = new Set(rawTimestamps.map(ts => ts.substring(0, 10)));
+    const isMultiDay = dateSet.size > 1;
+
+    // X축 라벨 포맷팅: 단일일자인 경우 HH:mm, 다중일자인 경우 MM/DD HH:mm
+    const timeLabels = rawTimestamps.map(ts => {
+        if (!ts) return '';
+        if (isMultiDay) {
+            const parts = ts.split(' ');
+            if (parts.length >= 2) {
+                const dateParts = parts[0].split('-');
+                return `${dateParts[1]}/${dateParts[2]} ${parts[1].substring(0, 5)}`;
+            }
+        }
+        return ts.substring(11, 16);
+    });
+
     const dateRangeSpan = document.getElementById('chart-date-range');
     if (dateRangeSpan && rawTimestamps.length > 0) {
         const firstDate = rawTimestamps[0].substring(0, 10).replace(/-/g, '.');
@@ -535,7 +427,7 @@ function renderIntegratedChart(series5m, param) {
                         title: function(context) {
                             const index = context[0].dataIndex;
                             const fullTs = rawTimestamps[index] || context[0].label;
-                            return `[24시간 5분 데이터] 일시: ${fullTs}`;
+                            return `[측정 데이터] 일시: ${fullTs}`;
                         }
                     }
                 }
@@ -543,7 +435,7 @@ function renderIntegratedChart(series5m, param) {
             scales: {
                 x: {
                     grid: { color: 'rgba(255, 255, 255, 0.05)' },
-                    ticks: { color: '#94a3b8', font: { size: 11 } }
+                    ticks: { color: '#94a3b8', font: { size: 10 }, maxRotation: 45, minRotation: 0 }
                 },
                 y: {
                     display: true,

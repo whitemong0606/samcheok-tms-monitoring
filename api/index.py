@@ -123,30 +123,26 @@ async def upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"파일 처리 중 오류: {str(e)}")
 
 @app.get("/api/analysis")
-def get_analysis_data():
+def get_analysis_data(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
     """
-    [강원도 삼척시 한국남부발전 삼척빛드림본부 전용]
-    1. 구글 시트 일자별 탭(YYYY-MM-DD) 우선 조회 (Cache-First: 시트에 존재 시 API 호출 안 함)
-    2. 시트에 없을 경우 CleanSYS API 호출 및 구글 시트에 일자별 탭으로 저장
+    [날짜 범위 지정 다중일시 데이터 조회 API]
+    start_date ~ end_date 범위 내 데이터 구글 시트 및 API 멀티 타겟 조회
     """
     global UPLOADED_DATA
-    date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+    today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+    
+    start_dt_str = start_date or today_str
+    end_dt_str = end_date or today_str
+
     plant_name = "한국남부발전(주) 삼척빛드림본부"
     region_name = "강원도 삼척시"
     
-    # 1. 구글 시트 우선 조회 (Cache-First)
-    df_5m = storage.read_telemetry_data(date_str)
-    val_logs = []
-    data_source = "GOOGLE_SHEETS"
-
-    if df_5m is None or df_5m.empty:
-        # 시트에 없을 경우 CleanSYS Open API 호출 및 시트에 저장
-        df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
-        storage.append_telemetry_data(df_5m, date_str)
-        data_source = "CLEANSYS_API"
+    df_5m, data_source = process_date_range_telemetry(start_dt_str, end_dt_str, plant_name, region_name, is_samcheok=True)
     
     UPLOADED_DATA["latest_5m"] = df_5m
-    UPLOADED_DATA["latest_val_logs"] = val_logs
 
     outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
     reports = {}
@@ -154,7 +150,7 @@ def get_analysis_data():
 
     for out in outlets:
         out_df = df_5m[df_5m["outlet"] == out]
-        rep = analyzer.generate_daily_report(out_df, out, date_str)
+        rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
         reports[out] = rep
         if rep.get("raw_alarms"):
             all_alarms.extend(rep["raw_alarms"])
@@ -162,62 +158,89 @@ def get_analysis_data():
     return {
         "success": True,
         "source": data_source,
-        "date_str": date_str,
+        "period": f"{start_dt_str} ~ {end_dt_str}",
         "outlets": outlets,
         "reports": reports,
         "all_alarms": all_alarms,
-        "validation_logs": val_logs,
         "series_5m": df_5m.fillna(0).to_dict(orient="records")
     }
+
+def process_date_range_telemetry(start_date_str: str, end_date_str: str, plant_name: str, region_name: str, is_samcheok: bool) -> Tuple[pd.DataFrame, str]:
+    """날짜 범위 (start_date ~ end_date) 멀티 테일러드 스티칭 로직"""
+    try:
+        dt_start = datetime.strptime(start_date_str, "%Y-%m-%d")
+        dt_end = datetime.strptime(end_date_str, "%Y-%m-%d")
+        if dt_start > dt_end:
+            dt_start, dt_end = dt_end, dt_start
+    except Exception:
+        now_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        dt_start = datetime.strptime(now_str, "%Y-%m-%d")
+        dt_end = dt_start
+
+    date_list = []
+    curr = dt_start
+    while curr <= dt_end:
+        date_list.append(curr.strftime("%Y-%m-%d"))
+        curr += timedelta(days=1)
+
+    dfs = []
+    sources = set()
+
+    for d_str in date_list:
+        day_df = None
+        if is_samcheok:
+            day_df = storage.read_telemetry_data(d_str)
+            if day_df is not None and not day_df.empty:
+                sources.add("GOOGLE_SHEETS")
+
+        if day_df is None or day_df.empty:
+            day_df, _, _ = cleansys_client.generate_24h_telemetry(plant_name, region_name, target_date_str=d_str)
+            sources.add("CLEANSYS_API")
+            if is_samcheok:
+                storage.append_telemetry_data(day_df, d_str)
+
+        if day_df is not None and not day_df.empty:
+            dfs.append(day_df)
+
+    if dfs:
+        merged_df = pd.concat(dfs, ignore_index=True)
+        merged_df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+        merged_df.sort_values(by=["timestamp", "outlet"], inplace=True)
+        merged_df.reset_index(drop=True, inplace=True)
+    else:
+        merged_df = pd.DataFrame()
+
+    primary_source = "GOOGLE_SHEETS" if "GOOGLE_SHEETS" in sources and len(sources) == 1 else "CLEANSYS_API"
+    return merged_df, primary_source
 
 @app.post("/api/cleansys/fetch")
 def fetch_cleansys_data(
     fact_manage_nm: Optional[str] = Form("한국남부발전"),
     area_nm: Optional[str] = Form("강원도"),
-    stack_code: Optional[str] = Form(None),
+    start_date: Optional[str] = Form(None),
+    end_date: Optional[str] = Form(None),
     service_key: Optional[str] = Form(None)
 ):
     """
-    [CleanSYS API 연동]
-    - 콤보박스로 선택된 사업장의 24시간 데이터를 수집하여 시각화.
-    - 한국남부발전 삼척빛드림본부의 경우:
-      1) 구글 시트에 해당 일자(YYYY-MM-DD) 데이터가 있으면 시트에서 우선 로드 (Cache-First)
-      2) 구글 시트에 없으면 API 수집 후 구글 시트에 일자별 탭으로 저장
-    - 타 사업장의 경우: API 수집 후 차트 시각화만 진행 (구글 시트 저장 안 함)
+    [CleanSYS API 날짜 범위 지정 멀티 수집]
+    - 선택된 날짜 범위(start_date ~ end_date) 수집 및 스티칭
     """
     try:
         if service_key:
             cleansys_client.service_key = service_key
 
-        date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        start_dt_str = start_date or today_str
+        end_dt_str = end_date or today_str
+
         plant_name = fact_manage_nm or "한국남부발전(주) 삼척빛드림본부"
         region_name = area_nm or "강원도 삼척시"
-
-        # 삼척빛드림본부 여부 판별 (삼척 또는 한국남부발전)
         is_samcheok = ("삼척" in str(plant_name) or "삼척" in str(region_name) or "한국남부발전" in str(plant_name))
 
-        df_5m = None
-        val_logs = []
-        data_source = "CLEANSYS_API"
-
-        if is_samcheok:
-            # 1. 삼척빛드림본부인 경우 구글 시트 우선 조회 (Cache-First)
-            df_5m = storage.read_telemetry_data(date_str)
-            if df_5m is not None and not df_5m.empty:
-                data_source = "GOOGLE_SHEETS"
-
-        # 시트에 없거나 타 사업장인 경우 Open API 수집
-        if df_5m is None or df_5m.empty:
-            df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
-            data_source = "CLEANSYS_API"
-            
-            # 삼척빛드림본부 데이터일 때만 구글 시트 일자별 탭으로 자동 저장!
-            if is_samcheok:
-                storage.append_telemetry_data(df_5m, date_str)
+        df_5m, data_source = process_date_range_telemetry(start_dt_str, end_dt_str, plant_name, region_name, is_samcheok)
 
         global UPLOADED_DATA
         UPLOADED_DATA["latest_5m"] = df_5m
-        UPLOADED_DATA["latest_val_logs"] = val_logs
 
         outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
         reports = {}
@@ -225,7 +248,7 @@ def fetch_cleansys_data(
 
         for out in outlets:
             out_df = df_5m[df_5m["outlet"] == out]
-            rep = analyzer.generate_daily_report(out_df, out, date_str)
+            rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
             reports[out] = rep
             if rep.get("raw_alarms"):
                 all_alarms.extend(rep["raw_alarms"])
@@ -234,13 +257,12 @@ def fetch_cleansys_data(
             "success": True,
             "source": data_source,
             "is_samcheok": is_samcheok,
-            "period": f"{date_str} 08:00 ~ {date_str} 08:00 (24h)",
+            "period": f"{start_dt_str} ~ {end_dt_str}",
             "items_count_5m": len(df_5m),
             "fact_manage_nm": plant_name,
             "outlets": outlets,
             "reports": reports,
             "all_alarms": all_alarms,
-            "validation_logs": val_logs,
             "series_5m": df_5m.fillna(0).to_dict(orient="records")
         }
     except Exception as e:

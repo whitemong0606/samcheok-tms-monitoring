@@ -72,6 +72,15 @@
                             <select id="combo-plant" class="custom-select custom-select-sm" title="사업장 선택" style="min-width: 220px;">
                                 <option value="한국남부발전(주) 삼척빛드림본부">한국남부발전(주) 삼척빛드림본부</option>
                             </select>
+
+                            <!-- Date Range Controls -->
+                            <div class="date-range-box" style="display: flex; align-items: center; gap: 6px;">
+                                <label for="date-start" style="font-size: 0.8rem; color: var(--text-secondary);"><i class="fa-regular fa-calendar-days"></i> 기간:</label>
+                                <input type="date" id="date-start" class="custom-select custom-select-sm" style="width: 130px;" title="조회 시작일">
+                                <span style="color: var(--text-secondary);">~</span>
+                                <input type="date" id="date-end" class="custom-select custom-select-sm" style="width: 130px;" title="조회 종료일">
+                            </div>
+
                             <button id="btn-fetch-cleansys" class="btn btn-accent btn-sm">
                                 <i class="fa-solid fa-cloud-down"></i> API 데이터 수집
                             </button>

@@ -57,18 +57,20 @@ class CleanSysAPIClient:
             
         return []
 
-    def generate_24h_telemetry(self, fact_manage_nm: str = "한국남부발전", area_nm: str = "강원도") -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict[str, Any]]]:
+    def generate_24h_telemetry(self, fact_manage_nm: str = "한국남부발전", area_nm: str = "강원도", target_date_str: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict[str, Any]]]:
         """
-        전일 08:00 ~ 금일 08:00 (24시간) 기준 5분 및 30분 데이터 생성 & 검증
-        Vercel 서버 UTC 환경 대응: 한국 표준시(KST: UTC+9) 고정 적용!
-        예: 오늘이 8/5일 경우 전일(8/4) 08:00 ~ 금일(8/5) 08:00 생성
+        특정 일자(또는 오늘 KST) 기준 24시간(전일 08:00 ~ 지정일 08:00) 5분 및 30분 데이터 생성 & 검증
         """
-        now_kst = datetime.now(KST)
-        today_08_kst = now_kst.replace(hour=8, minute=0, second=0, microsecond=0)
-        
-        # 현재 KST 시각이 오늘 08시 이전인 경우 전일 08시 기준 적용
-        if now_kst < today_08_kst:
-            today_08_kst = today_08_kst - timedelta(days=1)
+        if target_date_str:
+            try:
+                today_08_kst = datetime.strptime(target_date_str, "%Y-%m-%d").replace(hour=8, minute=0, second=0, microsecond=0, tzinfo=KST)
+            except Exception:
+                today_08_kst = datetime.now(KST).replace(hour=8, minute=0, second=0, microsecond=0)
+        else:
+            now_kst = datetime.now(KST)
+            today_08_kst = now_kst.replace(hour=8, minute=0, second=0, microsecond=0)
+            if now_kst < today_08_kst:
+                today_08_kst = today_08_kst - timedelta(days=1)
             
         yesterday_08_kst = today_08_kst - timedelta(days=1)
 
