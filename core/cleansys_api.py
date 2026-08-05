@@ -99,20 +99,28 @@ class CleanSysAPIClient:
                 flow_5m = np.random.normal(250, 20, 288)   # 미미한 잔여 유량
                 temp_5m = np.random.normal(42, 2, 288)     # 식어있는 굴뚝 온도
             else:
-                # 배출구 3, 4는 정상 운전(OPERATING) 상태
-                base_tsp = 2.4 + (stack_num - 3) * 1.5
-                base_nox = 14.5 + (stack_num - 3) * 5.0
-                base_sox = 6.2 + (stack_num - 3) * 3.0
-                base_o2 = 13.8 + (stack_num % 2) * 0.8
-                base_flow = 28000 + (stack_num - 3) * 4000
-                base_temp = 155 + (stack_num - 3) * 8
+                # 배출구 3, 4는 정상 운전(OPERATING) 상태 (실제 CleanSYS 실시간 API 수치 기준)
+                if stack_num == 3:
+                    base_tsp = 2.46
+                    base_nox = 0.04   # 실제 CleanSYS 수치: NOX 0.04ppm (미량 출력)
+                    base_sox = 4.73
+                    base_o2 = 13.8
+                    base_flow = 28000
+                    base_temp = 155
+                else: # 배출구 4
+                    base_tsp = 4.10
+                    base_nox = 6.96
+                    base_sox = 3.36
+                    base_o2 = 14.2
+                    base_flow = 32000
+                    base_temp = 163
 
-                tsp_5m = np.maximum(0, np.random.normal(base_tsp, 0.6, 288))
-                nox_5m = np.maximum(0, np.random.normal(base_nox, 2.0, 288))
-                sox_5m = np.maximum(0, np.random.normal(base_sox, 1.2, 288))
-                o2_5m = np.clip(np.random.normal(base_o2, 0.3, 288), 10.0, 16.0)
-                flow_5m = np.maximum(0, np.random.normal(base_flow, 1000, 288))
-                temp_5m = np.maximum(0, np.random.normal(base_temp, 4, 288))
+                tsp_5m = np.maximum(0, np.random.normal(base_tsp, 0.2, 288))
+                nox_5m = np.maximum(0, np.random.normal(base_nox, 0.03 if stack_num == 3 else 0.5, 288))
+                sox_5m = np.maximum(0, np.random.normal(base_sox, 0.4, 288))
+                o2_5m = np.clip(np.random.normal(base_o2, 0.2, 288), 10.0, 16.0)
+                flow_5m = np.maximum(0, np.random.normal(base_flow, 500, 288))
+                temp_5m = np.maximum(0, np.random.normal(base_temp, 2, 288))
 
                 status_5m = ["정상"] * 288
 
