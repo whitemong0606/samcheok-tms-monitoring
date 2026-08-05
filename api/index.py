@@ -178,27 +178,42 @@ def fetch_cleansys_data(
     service_key: Optional[str] = Form(None)
 ):
     """
-    [강원도 삼척시 삼척빛드림본부 전용 수집]
-    구글 시트에 기존 24시간 데이터가 있으면 시트에서 로드하여 API 호출 횟수(쿼터)를 절약함.
+    [CleanSYS API 연동]
+    - 콤보박스로 선택된 사업장의 24시간 데이터를 수집하여 시각화.
+    - 한국남부발전 삼척빛드림본부의 경우:
+      1) 구글 시트에 해당 일자(YYYY-MM-DD) 데이터가 있으면 시트에서 우선 로드 (Cache-First)
+      2) 구글 시트에 없으면 API 수집 후 구글 시트에 일자별 탭으로 저장
+    - 타 사업장의 경우: API 수집 후 차트 시각화만 진행 (구글 시트 저장 안 함)
     """
     try:
         if service_key:
             cleansys_client.service_key = service_key
 
         date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-        plant_name = "한국남부발전(주) 삼척빛드림본부"
-        region_name = "강원도 삼척시"
+        plant_name = fact_manage_nm or "한국남부발전(주) 삼척빛드림본부"
+        region_name = area_nm or "강원도 삼척시"
 
-        # 구글 시트에 해당 일자 데이터 존재 여부 우선 검사 (Cache-First)
-        df_5m = storage.read_telemetry_data(date_str)
+        # 삼척빛드림본부 여부 판별 (삼척 또는 한국남부발전)
+        is_samcheok = ("삼척" in str(plant_name) or "삼척" in str(region_name) or "한국남부발전" in str(plant_name))
+
+        df_5m = None
         val_logs = []
-        data_source = "GOOGLE_SHEETS"
+        data_source = "CLEANSYS_API"
 
+        if is_samcheok:
+            # 1. 삼척빛드림본부인 경우 구글 시트 우선 조회 (Cache-First)
+            df_5m = storage.read_telemetry_data(date_str)
+            if df_5m is not None and not df_5m.empty:
+                data_source = "GOOGLE_SHEETS"
+
+        # 시트에 없거나 타 사업장인 경우 Open API 수집
         if df_5m is None or df_5m.empty:
-            # 시트에 없으면 API에서 24시간 수집 후 구글 시트에 일자별 탭으로 저장
             df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
-            storage.append_telemetry_data(df_5m, date_str)
             data_source = "CLEANSYS_API"
+            
+            # 삼척빛드림본부 데이터일 때만 구글 시트 일자별 탭으로 자동 저장!
+            if is_samcheok:
+                storage.append_telemetry_data(df_5m, date_str)
 
         global UPLOADED_DATA
         UPLOADED_DATA["latest_5m"] = df_5m
@@ -218,6 +233,7 @@ def fetch_cleansys_data(
         return {
             "success": True,
             "source": data_source,
+            "is_samcheok": is_samcheok,
             "period": f"{date_str} 08:00 ~ {date_str} 08:00 (24h)",
             "items_count_5m": len(df_5m),
             "fact_manage_nm": plant_name,
