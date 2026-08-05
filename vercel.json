@@ -8,11 +8,7 @@
   "crons": [
     {
       "path": "/api/cron/fetch-30m",
-      "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/cron/daily-report",
-      "schedule": "0 23 * * *"
+      "schedule": "0 8 * * *"
     }
   ],
   "routes": [
