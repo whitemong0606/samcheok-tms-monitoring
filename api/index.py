@@ -42,7 +42,9 @@ UPLOADED_DATA: Dict[str, pd.DataFrame] = {}
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    index_path = os.path.join(static_dir, "index.html")
+    root_index = os.path.join(os.path.dirname(os.path.dirname(__file__)), "index.html")
+    static_index = os.path.join(static_dir, "index.html")
+    index_path = root_index if os.path.exists(root_index) else static_index
     if os.path.exists(index_path):
         with open(index_path, "r", encoding="utf-8") as f:
             return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
