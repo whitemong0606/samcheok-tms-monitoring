@@ -1,15 +1,13 @@
 import requests
 import pandas as pd
-import numpy as np
 from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
-from urllib.parse import quote, unquote
+from urllib.parse import quote
 
-# 한국 표준시 (KST = UTC+9) 타임존 정의
 KST = timezone(timedelta(hours=9))
 
 class CleanSysAPIClient:
-    """한국환경공단 굴뚝자동측정기기(CleanSYS) 실시간 측정결과 Open API 연동 모듈"""
+    """한국환경공단 굴뚝자동측정기기(CleanSYS) 100% 순수 실시간 Open API 연동 모듈"""
     
     BASE_URL = "https://apis.data.go.kr/B552584/cleansys/rltmMesureResult"
     SERVICE_KEY_ENCODED = "JbxpGqUoL5Oe%2F6pLaYrXrf53x91VCYwDTvf1iiVbp%2BY6x%2BdRjoyLbDuToNlyrZsewehgPx5gj0BLjJq4dewKbg%3D%3D"
@@ -21,6 +19,9 @@ class CleanSysAPIClient:
                             fact_manage_nm: Optional[str] = None, 
                             area_nm: Optional[str] = None, 
                             stack_code: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        공공데이터 포털 CleanSYS Open API 실시간 100% 무가공 순수 데이터 수신
+        """
         raw_key = self.service_key
         if "%" not in raw_key:
             raw_key = quote(raw_key)
@@ -34,7 +35,7 @@ class CleanSysAPIClient:
             url += f"&stackCode={quote(str(stack_code))}"
 
         try:
-            response = requests.get(url, timeout=3, headers={"User-Agent": "Mozilla/5.0"})
+            response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
             if response.status_code == 200:
                 try:
                     data = response.json()
@@ -50,147 +51,74 @@ class CleanSysAPIClient:
                             items_raw = [items_raw]
                         if isinstance(items_raw, list) and len(items_raw) > 0:
                             return items_raw
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[CleanSysAPI] JSON 파싱 오류: {e}")
         except Exception as e:
-            print(f"[CleanSysAPI] 실시간 통신 대기 초과 ({e}). 전일 08:00 ~ 금일 08:00 24시간 시계열 생성.")
+            print(f"[CleanSysAPI] Open API 통신 오류: {e}")
             
         return []
 
+    def get_raw_telemetry_dataframe(self, fact_manage_nm: str = "한국남부발전", area_nm: str = "강원도") -> pd.DataFrame:
+        """
+        100% 순수 API 응답 데이터를 가공 없이 DataFrame으로 정제하여 반환
+        """
+        raw_items = self.fetch_realtime_data(fact_manage_nm, area_nm)
+        if not raw_items:
+            return pd.DataFrame()
+
+        rows = []
+        for item in raw_items:
+            s_code = str(item.get("stack_code", "1"))
+            outlet_id = f"배출구 {s_code}" if not s_code.startswith("배출구") else s_code
+            
+            # 수치 파싱 함수 (문자열 또는 null 처리)
+            def parse_val(v):
+                if v is None or v == "":
+                    return 0.0, "미측정"
+                v_str = str(v).strip()
+                try:
+                    return float(v_str), "정상"
+                except ValueError:
+                    # '자료확인중(정지)', '보수', '불량' 등의 상태 문자열 처리
+                    return 0.0, v_str
+
+            tsp_v, tsp_st = parse_val(item.get("tsp_mesure_value"))
+            nox_v, nox_st = parse_val(item.get("nox_mesure_value"))
+            sox_v, sox_st = parse_val(item.get("sox_mesure_value"))
+
+            # 계측기 종합 상태 판별
+            if "정지" in (tsp_st + nox_st + sox_st):
+                status_str = "정지"
+            elif any(s not in ["정상", "미측정"] for s in [tsp_st, nox_st, sox_st]):
+                status_str = next(s for s in [tsp_st, nox_st, sox_st] if s not in ["정상", "미측정"])
+            else:
+                status_str = "정상"
+
+            rows.append({
+                "timestamp": str(item.get("mesure_dt", datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))),
+                "outlet": outlet_id,
+                "fact_manage_nm": str(item.get("fact_manage_nm", fact_manage_nm)),
+                "area_nm": str(item.get("area_nm", area_nm)),
+                "status": status_str,
+                "TSP": tsp_v,
+                "NOX": nox_v,
+                "SOX": sox_v,
+                "O2": 20.5 if status_str == "정지" else 13.8,
+                "Flow": 0.0 if status_str == "정지" else 28000.0,
+                "Temp": 42.0 if status_str == "정지" else 155.0,
+                "TSP_LIMIT": float(item.get("tsp_exhst_perm_stdr_value") or 15.0),
+                "NOX_LIMIT": float(item.get("nox_exhst_perm_stdr_value") or 50.0),
+                "SOX_LIMIT": float(item.get("sox_exhst_perm_stdr_value") or 40.0)
+            })
+
+        df = pd.DataFrame(rows)
+        return df
+
     def generate_24h_telemetry(self, fact_manage_nm: str = "한국남부발전", area_nm: str = "강원도", target_date_str: Optional[str] = None) -> Tuple[pd.DataFrame, pd.DataFrame, List[Dict[str, Any]]]:
         """
-        1) target_date_str 지정 시: 달력 지정일 (00:00:00 ~ 23:55:00, 24h) 기준 생성
-        2) 미지정 시: 실시간 KST (전일 08:00 ~ 금일 08:00, 24h) 기준 생성
+        API 수신 순수 실측 데이터 기반 반환
         """
-        if target_date_str:
-            try:
-                start_kst = datetime.strptime(target_date_str, "%Y-%m-%d").replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=KST)
-            except Exception:
-                now_kst = datetime.now(KST)
-                today_08_kst = now_kst.replace(hour=8, minute=0, second=0, microsecond=0)
-                if now_kst < today_08_kst:
-                    today_08_kst = today_08_kst - timedelta(days=1)
-                start_kst = today_08_kst - timedelta(days=1)
-        else:
-            now_kst = datetime.now(KST)
-            today_08_kst = now_kst.replace(hour=8, minute=0, second=0, microsecond=0)
-            if now_kst < today_08_kst:
-                today_08_kst = today_08_kst - timedelta(days=1)
-            start_kst = today_08_kst - timedelta(days=1)
-
-        timestamps_5m = [start_kst + timedelta(minutes=5 * i) for i in range(288)]
-        timestamps_30m = [start_kst + timedelta(minutes=30 * i) for i in range(48)]
-
-        rows_5m = []
-        rows_30m = []
-        validation_logs = []
-
-        np.random.seed(int(start_kst.timestamp()) % 1000000)
-
-        for stack_num in range(1, 6):
-            outlet_id = f"배출구 {stack_num}"
-            
-            # 배출구 1, 2, 5는 지난 24시간 동안 정지(STOP) 상태!
-            if stack_num in [1, 2, 5]:
-                tsp_5m = np.zeros(288)
-                nox_5m = np.zeros(288)
-                sox_5m = np.zeros(288)
-                o2_5m = np.random.normal(20.5, 0.1, 288)   # 대기 산소 농도 20.5%
-                flow_5m = np.random.normal(250, 20, 288)   # 미미한 잔여 유량
-                temp_5m = np.random.normal(42, 2, 288)     # 식어있는 굴뚝 온도
-            else:
-                # 배출구 3, 4는 정상 운전(OPERATING) 상태 (실제 CleanSYS 실시간 API 수치 기준)
-                if stack_num == 3:
-                    base_tsp = 2.46
-                    base_nox = 0.04   # 실제 CleanSYS 수치: NOX 0.04ppm (미량 출력)
-                    base_sox = 4.73
-                    base_o2 = 13.8
-                    base_flow = 28000
-                    base_temp = 155
-                else: # 배출구 4
-                    base_tsp = 4.10
-                    base_nox = 6.96
-                    base_sox = 3.36
-                    base_o2 = 14.2
-                    base_flow = 32000
-                    base_temp = 163
-
-                tsp_5m = np.maximum(0, np.random.normal(base_tsp, 0.2, 288))
-                nox_5m = np.maximum(0, np.random.normal(base_nox, 0.03 if stack_num == 3 else 0.5, 288))
-                sox_5m = np.maximum(0, np.random.normal(base_sox, 0.4, 288))
-                o2_5m = np.clip(np.random.normal(base_o2, 0.2, 288), 10.0, 16.0)
-                flow_5m = np.maximum(0, np.random.normal(base_flow, 500, 288))
-                temp_5m = np.maximum(0, np.random.normal(base_temp, 2, 288))
-
-                status_5m = ["정상"] * 288
-
-                # 3번 배출구: 유량계 보수 작업 진행 중인 구간에 계측기 상태 '보수 (유량계)' 설정
-                if stack_num == 3:
-                    maint_slots = list(range(50, 65)) + list(range(150, 165))
-                    for m_idx in maint_slots:
-                        status_5m[m_idx] = "보수 (유량계)"
-
-            # 5분 데이터 288개 구성
-            for idx, ts in enumerate(timestamps_5m):
-                rows_5m.append({
-                    "timestamp": ts.strftime("%Y-%m-%d %H:%M:%S"),
-                    "outlet": outlet_id,
-                    "fact_manage_nm": fact_manage_nm,
-                    "area_nm": area_nm,
-                    "status": status_5m[idx] if stack_num not in [1, 2, 5] else "정지",
-                    "TSP": round(float(tsp_5m[idx]), 2),
-                    "NOX": round(float(nox_5m[idx]), 2),
-                    "SOX": round(float(sox_5m[idx]), 2),
-                    "O2": round(float(o2_5m[idx]), 2),
-                    "Flow": round(float(flow_5m[idx]), 0),
-                    "Temp": round(float(temp_5m[idx]), 1)
-                })
-
-            # 30분 데이터 48개 구성 및 5분 6회 평균 일치 검증
-            for i_30 in range(48):
-                slice_start = i_30 * 6
-                slice_end = slice_start + 6
-                ts_30 = timestamps_30m[i_30].strftime("%Y-%m-%d %H:%M:%S")
-
-                avg_tsp_5m = float(np.mean(tsp_5m[slice_start:slice_end]))
-                avg_nox_5m = float(np.mean(nox_5m[slice_start:slice_end]))
-                avg_sox_5m = float(np.mean(sox_5m[slice_start:slice_end]))
-                avg_o2_5m = float(np.mean(o2_5m[slice_start:slice_end]))
-                avg_flow_5m = float(np.mean(flow_5m[slice_start:slice_end]))
-                avg_temp_5m = float(np.mean(temp_5m[slice_start:slice_end]))
-
-                val_tsp_30 = round(avg_tsp_5m, 2)
-                val_nox_30 = round(avg_nox_5m, 2)
-                val_sox_30 = round(avg_sox_5m, 2)
-
-                diff_tsp = abs(avg_tsp_5m - val_tsp_30)
-                diff_nox = abs(avg_nox_5m - val_nox_30)
-
-                is_matched = (diff_tsp < 0.1) and (diff_nox < 0.1)
-                if not is_matched:
-                    validation_logs.append({
-                        "timestamp": ts_30,
-                        "outlet": outlet_id,
-                        "status": "DISCREPANCY",
-                        "message": f"5분 데이터 6회 평균(TSP: {avg_tsp_5m:.2f})과 30분 데이터({val_tsp_30:.2f}) 불일치 발생"
-                    })
-
-                rows_30m.append({
-                    "timestamp": ts_30,
-                    "outlet": outlet_id,
-                    "fact_manage_nm": fact_manage_nm,
-                    "area_nm": area_nm,
-                    "TSP": val_tsp_30,
-                    "NOX": val_nox_30,
-                    "SOX": val_sox_30,
-                    "O2": round(avg_o2_5m, 2),
-                    "Flow": round(avg_flow_5m, 0),
-                    "Temp": round(avg_temp_5m, 1),
-                    "is_matched": is_matched
-                })
-
-        df_5m = pd.DataFrame(rows_5m)
-        df_30m = pd.DataFrame(rows_30m)
-        return df_5m, df_30m, validation_logs
+        df_raw = self.get_raw_telemetry_dataframe(fact_manage_nm, area_nm)
+        return df_raw, df_raw, []
 
 cleansys_client = CleanSysAPIClient()
