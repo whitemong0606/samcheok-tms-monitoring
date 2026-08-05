@@ -594,6 +594,7 @@ async function loadSettings() {
             const s = data.settings;
             document.getElementById('bot-token').value = s.bot_token || '';
             document.getElementById('chat-id').value = s.chat_id || '';
+            document.getElementById('google-sheet-id').value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
             document.getElementById('report-time').value = s.report_time || '08:30';
             document.getElementById('template-text').value = s.template || '';
 
@@ -617,6 +618,7 @@ async function saveSettings(e) {
     const payload = {
         bot_token: document.getElementById('bot-token').value.trim(),
         chat_id: document.getElementById('chat-id').value.trim(),
+        google_sheet_id: document.getElementById('google-sheet-id').value.trim(),
         report_time: document.getElementById('report-time').value,
         template: document.getElementById('template-text').value,
         limits: {

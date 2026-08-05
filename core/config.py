@@ -15,6 +15,7 @@ class SystemConfig:
     """시스템 환경 설정 및 상수"""
     TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
     TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    GOOGLE_SHEET_ID: str = os.getenv("GOOGLE_SHEET_ID", "1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY")
     DAILY_REPORT_TIME: str = os.getenv("DAILY_REPORT_TIME", "08:30")
     
     # 배출구 목록 (5개 배출구)
