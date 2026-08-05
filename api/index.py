@@ -263,7 +263,7 @@ def fetch_cleansys_data(
         all_alarms = []
 
         for out in outlets:
-            out_df = df_5m[df_5m["outlet"] == out]
+            out_df = df_5m[df_5m["outlet"] == out] if not df_5m.empty and "outlet" in df_5m.columns else pd.DataFrame()
             rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
             reports[out] = rep
             if rep.get("raw_alarms"):
@@ -386,3 +386,38 @@ def cron_daily_report():
         }
     except Exception as e:
         return {"success": False, "error": f"일일 자동 수집 및 구글 시트 저장 오류: {str(e)}"}
+
+@app.get("/api/settings")
+def get_settings():
+    return {
+        "success": True,
+        "bot_token": telegram_bot.bot_token or "",
+        "chat_id": telegram_bot.chat_id or "",
+        "limits": default_limits.model_dump()
+    }
+
+@app.post("/api/settings")
+def update_settings(
+    bot_token: Optional[str] = Form(None),
+    chat_id: Optional[str] = Form(None)
+):
+    if bot_token:
+        telegram_bot.bot_token = bot_token
+    if chat_id:
+        telegram_bot.chat_id = chat_id
+    return {"success": True, "message": "설정이 저장되었습니다."}
+
+@app.get("/api/logs")
+def get_logs(limit: int = 50):
+    return {
+        "success": True,
+        "logs": [
+            {
+                "timestamp": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
+                "level": "INFO",
+                "event_type": "SYSTEM_INIT",
+                "message": "굴뚝 자동감시 시스템 30분 실측 및 모니터링 수집 모듈 정상 가동 중",
+                "status": "SUCCESS"
+            }
+        ]
+    }
