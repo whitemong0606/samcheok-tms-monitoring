@@ -2,6 +2,7 @@ let stackChart = null;
 
 document.addEventListener('DOMContentLoaded', () => {
     initTabs();
+    initSubTabs();
     initFileUpload();
     initCleanSysAPI();
     initDatePickers();
@@ -893,4 +894,219 @@ function showToast(message, type = 'INFO') {
     setTimeout(() => {
         toast.classList.add('hidden');
     }, 4000);
+}
+
+// 9. Sub-Tab Switching & Automated 30-Min Google Sheets Analysis
+let autoStackChart = null;
+
+function initSubTabs() {
+    const manualBtn = document.getElementById('btn-subtab-manual');
+    const autoBtn = document.getElementById('btn-subtab-auto');
+    const manualPane = document.getElementById('subpane-manual');
+    const autoPane = document.getElementById('subpane-auto');
+    const statusBadge = document.getElementById('subtab-status-badge');
+
+    if (!manualBtn || !autoBtn) return;
+
+    manualBtn.addEventListener('click', () => {
+        manualBtn.classList.add('active', 'btn-emerald');
+        manualBtn.classList.remove('btn-secondary');
+        autoBtn.classList.remove('active', 'btn-emerald');
+        autoBtn.classList.add('btn-secondary');
+
+        manualPane.style.display = 'block';
+        autoPane.style.display = 'none';
+        if (statusBadge) {
+            statusBadge.className = 'badge badge-success';
+            statusBadge.textContent = '모드: 수동 엑셀 업로드 분석';
+        }
+    });
+
+    autoBtn.addEventListener('click', () => {
+        autoBtn.classList.add('active', 'btn-emerald');
+        autoBtn.classList.remove('btn-secondary');
+        manualBtn.classList.remove('active', 'btn-emerald');
+        manualBtn.classList.add('btn-secondary');
+
+        autoPane.style.display = 'block';
+        manualPane.style.display = 'none';
+        if (statusBadge) {
+            statusBadge.className = 'badge badge-primary';
+            statusBadge.textContent = '모드: 30분 실시간 구글시트 모니터링';
+        }
+        loadAutoAnalysisData();
+    });
+
+    const refreshBtn = document.getElementById('btn-auto-refresh');
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            showToast('🔄 구글 시트 30분 실측 데이터 새로고침 중...');
+            loadAutoAnalysisData();
+        });
+    }
+
+    const autoOutletSelect = document.getElementById('auto-outlet-select');
+    if (autoOutletSelect) {
+        autoOutletSelect.addEventListener('change', () => {
+            loadAutoAnalysisData();
+        });
+    }
+
+    const autoParamBtns = document.querySelectorAll('.auto-param-btn');
+    autoParamBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            autoParamBtns.forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            if (window.currentAutoData) {
+                renderAutoChart(window.currentAutoData, btn.dataset.param);
+            }
+        });
+    });
+}
+
+async function loadAutoAnalysisData() {
+    try {
+        const res = await fetch('/api/analysis/auto');
+        const data = await res.json();
+        
+        if (data.success) {
+            window.currentAutoData = data;
+            const outlet = document.getElementById('auto-outlet-select').value || '배출구 3';
+            const rep = data.reports[outlet];
+
+            if (rep) {
+                document.getElementById('auto-val-status').textContent = rep.status || '운전 중';
+                document.getElementById('auto-val-tsp').textContent = rep.avg_tsp !== undefined ? rep.avg_tsp.toFixed(2) : '--';
+                document.getElementById('auto-val-nox').textContent = rep.avg_nox !== undefined ? rep.avg_nox.toFixed(2) : '--';
+                document.getElementById('auto-val-sox').textContent = rep.avg_sox !== undefined ? rep.avg_sox.toFixed(2) : '--';
+            }
+
+            const updatedElem = document.getElementById('auto-last-updated');
+            if (updatedElem && data.series_30m && data.series_30m.length > 0) {
+                const lastTs = data.series_30m[data.series_30m.length - 1].timestamp;
+                updatedElem.textContent = `마지막 30분 수집 시각: ${lastTs}`;
+            }
+
+            renderAutoChart(data, 'TSP');
+            renderAutoAlarmTable(data.all_alarms);
+            renderAutoRawDataTable(data.series_30m);
+        } else {
+            showToast(`자동 분석 데이터 조회 오류: ${data.message}`, 'ERROR');
+        }
+    } catch (err) {
+        console.error("loadAutoAnalysisData 오류:", err);
+    }
+}
+
+function renderAutoChart(data, param) {
+    const ctx = document.getElementById('autoStackChart');
+    if (!ctx) return;
+
+    const series = data.series_30m || [];
+    if (series.length === 0) return;
+
+    const timestamps = [...new Set(series.map(s => s.timestamp))].sort();
+    const outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"];
+    const colors = ['#64748b', '#94a3b8', '#0ea5e9', '#10b981', '#f59e0b'];
+
+    const datasets = outlets.map((out, idx) => {
+        const outData = series.filter(s => s.outlet === out);
+        const dataMap = new Map(outData.map(s => [s.timestamp, s[param] || 0]));
+        const points = timestamps.map(ts => dataMap.get(ts) || 0);
+
+        return {
+            label: out,
+            data: points,
+            borderColor: colors[idx],
+            backgroundColor: colors[idx],
+            borderWidth: 2,
+            tension: 0.2,
+            pointRadius: 3
+        };
+    });
+
+    if (autoStackChart) {
+        autoStackChart.destroy();
+    }
+
+    autoStackChart = new Chart(ctx, {
+        type: 'line',
+        data: { labels: timestamps, datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { labels: { color: '#f8fafc' } }
+            },
+            scales: {
+                x: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                y: { ticks: { color: '#94a3b8' }, grid: { color: 'rgba(255,255,255,0.05)' } }
+            }
+        }
+    });
+}
+
+function renderAutoAlarmTable(alarms) {
+    const tbody = document.getElementById('auto-alarm-tbody');
+    const badge = document.getElementById('auto-alarm-badge');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    badge.textContent = `알람 ${alarms ? alarms.length : 0}건`;
+
+    if (!alarms || alarms.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-row">감지된 이상 신호가 없습니다 (모든 항목 정상)</td></tr>`;
+        return;
+    }
+
+    alarms.forEach(a => {
+        const tr = document.createElement('tr');
+        const lvlBadge = a.level === 'CRITICAL' ? '<span class="badge badge-critical">CRITICAL</span>' : '<span class="badge badge-warning">WARNING</span>';
+        tr.innerHTML = `
+            <td>${a.timestamp || ''}</td>
+            <td><strong>${a.outlet || ''}</strong></td>
+            <td><span class="badge badge-primary">${a.factor || ''}</span></td>
+            <td>${a.alarm_type || ''}</td>
+            <td style="text-align: left;">${escapeHtml(a.message || '')}</td>
+            <td>${lvlBadge}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+}
+
+function renderAutoRawDataTable(series) {
+    const tbody = document.getElementById('auto-raw-tbody');
+    if (!tbody) return;
+
+    tbody.innerHTML = '';
+    if (!series || series.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">구글 시트에 수집된 30분 실측 데이터가 없습니다.</td></tr>`;
+        return;
+    }
+
+    const outlet = document.getElementById('auto-outlet-select').value || '배출구 3';
+    const filtered = series.filter(s => s.outlet === outlet);
+
+    const targetList = filtered.length > 0 ? filtered : series;
+
+    targetList.forEach(r => {
+        const tr = document.createElement('tr');
+        const st = r.status || '정상';
+        let stBadge = `<span class="badge badge-success">정상</span>`;
+        if (st.includes('보수')) stBadge = `<span class="badge badge-warning">보수</span>`;
+        if (st === '정지') stBadge = `<span class="badge badge-secondary">정지</span>`;
+
+        tr.innerHTML = `
+            <td>${r.timestamp || ''}</td>
+            <td><strong>${r.outlet || ''}</strong></td>
+            <td>${stBadge}</td>
+            <td>${r.TSP !== undefined ? Number(r.TSP).toFixed(2) : '0.00'}</td>
+            <td>${r.NOX !== undefined ? Number(r.NOX).toFixed(2) : '0.00'}</td>
+            <td>${r.SOX !== undefined ? Number(r.SOX).toFixed(2) : '0.00'}</td>
+            <td>${r.O2 !== undefined ? Number(r.O2).toFixed(1) : '0.0'}</td>
+            <td>${r.Flow !== undefined ? Math.round(Number(r.Flow)).toLocaleString() : '0'}</td>
+            <td>${r.Temp !== undefined ? Number(r.Temp).toFixed(1) : '0.0'}</td>
+        `;
+        tbody.appendChild(tr);
+    });
 }

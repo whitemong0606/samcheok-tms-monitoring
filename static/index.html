@@ -47,160 +47,37 @@
         <main class="app-content">
             <!-- TAB 1: DATA ANALYSIS -->
             <section id="tab-analysis" class="tab-pane active">
-                <!-- Upload & Filter Bar -->
-                <div class="card glass-card top-control-bar">
-                    <div class="upload-section">
-                        <label for="file-upload" class="upload-dropzone" id="dropzone">
-                            <i class="fa-solid fa-cloud-arrow-up"></i>
-                            <div class="dropzone-text">
-                                <strong>공단 Raw Data 수동 업로드 (.csv, .xlsx)</strong>
-                                <span>드래그 앤 드롭 또는 클릭하여 파일 선택</span>
-                            </div>
-                            <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" hidden>
-                        </label>
+                <!-- Sub-Tab Navigation Header -->
+                <div class="subtab-header glass-card" style="display: flex; gap: 12px; margin-bottom: 16px; padding: 10px 16px; align-items: center; justify-content: space-between; border-radius: 12px; background: var(--bg-card);">
+                    <div style="display: flex; gap: 10px;">
+                        <button class="btn btn-emerald btn-sm subtab-btn active" id="btn-subtab-manual" data-subtab="subpane-manual">
+                            <i class="fa-solid fa-file-excel"></i> 수동 분석 (엑셀 업로드)
+                        </button>
+                        <button class="btn btn-secondary btn-sm subtab-btn" id="btn-subtab-auto" data-subtab="subpane-auto">
+                            <i class="fa-solid fa-clock-rotate-left"></i> 자동 분석 (30분 실시간 구글시트)
+                        </button>
                     </div>
-
-                    <!-- CleanSYS Open API Cascade Combo Box Selection -->
-                    <div class="cleansys-api-section">
-                        <div class="api-inputs-row" style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-                            <select id="combo-region" class="custom-select custom-select-sm" title="지역 선택">
-                                <option value="강원도">강원도</option>
-                            </select>
-                            <select id="combo-subregion" class="custom-select custom-select-sm" title="세부지역 선택">
-                                <option value="삼척시">삼척시</option>
-                            </select>
-                            <select id="combo-plant" class="custom-select custom-select-sm" title="사업장 선택" style="min-width: 220px;">
-                                <option value="한국남부발전(주) 삼척빛드림본부">한국남부발전(주) 삼척빛드림본부</option>
-                            </select>
-
-                            <!-- Date Range Controls -->
-                            <div class="date-range-box" style="display: flex; align-items: center; gap: 6px;">
-                                <label for="date-start" style="font-size: 0.82rem; color: var(--text-secondary); white-space: nowrap;"><i class="fa-regular fa-calendar-days"></i> 기간:</label>
-                                <input type="date" id="date-start" class="custom-select custom-select-sm date-picker-input" style="min-width: 148px; cursor: pointer;" title="조회 시작일 (클릭 시 달력 팝업)">
-                                <span style="color: var(--text-secondary);">~</span>
-                                <input type="date" id="date-end" class="custom-select custom-select-sm date-picker-input" style="min-width: 148px; cursor: pointer;" title="조회 종료일 (클릭 시 달력 팝업)">
-                            </div>
-
-                            <!-- Quick 24h Data Fetch Button -->
-                            <button id="btn-quick-24h" class="btn btn-emerald btn-sm" style="background: linear-gradient(135deg, #10b981, #059669) !important; color: #ffffff !important; border: 1px solid #10b981 !important; box-shadow: 0 4px 14px rgba(16, 185, 129, 0.45) !important;" title="전일 08:00 ~ 금일 08:00 24시간 데이터 조회를 바로 실행합니다">
-                                <i class="fa-solid fa-clock-rotate-left"></i> 24시간 데이터 조회
-                            </button>
-
-                            <button id="btn-fetch-cleansys" class="btn btn-accent btn-sm">
-                                <i class="fa-solid fa-cloud-down"></i> API 데이터 수집
-                            </button>
-                        </div>
-                    </div>
-
-                    <div class="outlet-selector-box">
-                        <label for="outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택 (요약 카드):</label>
-                        <select id="outlet-select" class="custom-select">
-                            <option value="배출구 1">배출구 1</option>
-                            <option value="배출구 2">배출구 2</option>
-                            <option value="배출구 3">배출구 3</option>
-                            <option value="배출구 4">배출구 4</option>
-                            <option value="배출구 5">배출구 5</option>
-                        </select>
-                    </div>
+                    <span class="badge badge-success" id="subtab-status-badge">모드: 수동 엑셀 업로드 분석</span>
                 </div>
 
-                <!-- Metric Cards Grid -->
-                <div class="metrics-grid">
-                    <div class="metric-card glass-card">
-                        <div class="metric-header">
-                            <span>운전 상태 (선택 배출구)</span>
-                            <i class="fa-solid fa-power-off"></i>
+                <!-- SUB-PANE 1: MANUAL ANALYSIS (EXCEL UPLOAD ONLY) -->
+                <div id="subpane-manual" class="subpane-content active">
+                    <!-- Upload Dropzone & Outlet Selector -->
+                    <div class="card glass-card top-control-bar" style="margin-bottom: 16px;">
+                        <div class="upload-section" style="width: 100%;">
+                            <label for="file-upload" class="upload-dropzone" id="dropzone">
+                                <i class="fa-solid fa-cloud-arrow-up"></i>
+                                <div class="dropzone-text">
+                                    <strong>CleanSYS 24시간 5분 이력 엑셀 수동 업로드 (.csv, .xlsx, .xls)</strong>
+                                    <span>드래그 앤 드롭 또는 클릭하여 사업장 전용 포털 다운로드 엑셀 파일 선택</span>
+                                </div>
+                                <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" hidden>
+                            </label>
                         </div>
-                        <div class="metric-value" id="val-status">운전 중</div>
-                        <div class="metric-sub" id="val-op-hours">운전 --h / 정지 --h</div>
-                    </div>
-                    <div class="metric-card glass-card">
-                        <div class="metric-header">
-                            <span>TSP (미세먼지)</span>
-                            <span class="unit">mg/m³</span>
-                        </div>
-                        <div class="metric-value" id="val-tsp">--</div>
-                        <div class="metric-sub">기준: <span id="limit-tsp">15.0</span> mg/m³</div>
-                    </div>
-                    <div class="metric-card glass-card">
-                        <div class="metric-header">
-                            <span>NOX (질소산화물)</span>
-                            <span class="unit">ppm</span>
-                        </div>
-                        <div class="metric-value" id="val-nox">--</div>
-                        <div class="metric-sub">기준: <span id="limit-nox">50.0</span> ppm</div>
-                    </div>
-                    <div class="metric-card glass-card">
-                        <div class="metric-header">
-                            <span>SOX (황산화물)</span>
-                            <span class="unit">ppm</span>
-                        </div>
-                        <div class="metric-value" id="val-sox">--</div>
-                        <div class="metric-sub">기준: <span id="limit-sox">50.0</span> ppm</div>
-                    </div>
-                    <div class="metric-card glass-card">
-                        <div class="metric-header">
-                            <span>5분/30분 검증 상태</span>
-                            <i class="fa-solid fa-square-check"></i>
-                        </div>
-                        <div class="metric-value" id="val-validation" style="font-size: 1.1rem; color: var(--accent-emerald);">일치 검증 완료</div>
-                        <div class="metric-sub">5분 데이터 6회 평균 = 30분 데이터</div>
-                    </div>
-                </div>
 
-                <!-- Charts Section -->
-                <div class="chart-section glass-card">
-                    <div class="chart-header">
-                        <h3><i class="fa-solid fa-chart-area"></i> 전체 배출구(배출구 1~5) 5분 데이터 통합 시각화 차트 <span id="chart-date-range" style="font-size: 0.88rem; color: var(--accent-cyan); font-weight: 500; margin-left: 6px;">(2026.08.04 ~ 2026.08.05)</span></h3>
-                        <div class="param-selector-box">
-                            <span class="param-label">감시 인자 선택:</span>
-                            <button class="param-btn active" data-param="TSP">TSP</button>
-                            <button class="param-btn" data-param="NOX">NOX</button>
-                            <button class="param-btn" data-param="SOX">SOX</button>
-                            <button class="param-btn" data-param="O2">O2 (%)</button>
-                            <button class="param-btn" data-param="Flow">Flow</button>
-                            <button class="param-btn" data-param="Temp">Temp</button>
-                        </div>
-                    </div>
-                    <div class="chart-container">
-                        <canvas id="stackChart"></canvas>
-                    </div>
-                </div>
-
-                <!-- Anomaly Signal List Table -->
-                <div class="table-section glass-card">
-                    <div class="table-header">
-                        <h3><i class="fa-solid fa-triangle-exclamation"></i> 이상 신호 및 알람 판별 결과</h3>
-                        <span class="badge badge-warning" id="alarm-count-badge">알람 0건</span>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="custom-table" id="alarm-table">
-                            <thead>
-                                <tr>
-                                    <th>발생 시각</th>
-                                    <th>배출구</th>
-                                    <th>감시 항목</th>
-                                    <th>알람 유형</th>
-                                    <th>상세 진단 내용</th>
-                                    <th>경보 등급</th>
-                                </tr>
-                            </thead>
-                            <tbody id="alarm-tbody">
-                                <tr>
-                                    <td colspan="6" class="empty-row">감지된 이상 신호가 없습니다.</td>
-                                </tr>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-
-                <!-- 24h 5-Min Raw Data Inspection Collapsible Table Section -->
-                <div class="table-section glass-card collapsible-card">
-                    <div class="table-header">
-                        <div class="title-with-filter">
-                            <h3><i class="fa-solid fa-table-list"></i> 수집 data 확인 (24시간 5분 데이터 전수 조율)</h3>
-                            <select id="raw-outlet-select" class="custom-select custom-select-sm" style="margin-left: 16px;">
-                                <option value="ALL">전체 배출구 데이터</option>
+                        <div class="outlet-selector-box" style="margin-top: 12px;">
+                            <label for="outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택 (요약 카드):</label>
+                            <select id="outlet-select" class="custom-select">
                                 <option value="배출구 1">배출구 1</option>
                                 <option value="배출구 2">배출구 2</option>
                                 <option value="배출구 3">배출구 3</option>
@@ -208,32 +85,283 @@
                                 <option value="배출구 5">배출구 5</option>
                             </select>
                         </div>
-                        <button id="btn-toggle-rawtable" class="btn btn-secondary btn-sm">
-                            <i class="fa-solid fa-chevron-down" id="toggle-icon"></i> <span>24시간 데이터 펼치기</span>
-                        </button>
                     </div>
-                    <div id="raw-table-wrapper" class="table-responsive collapsed-content collapsed">
-                        <table class="custom-table" id="raw-data-table">
-                            <thead>
-                                <tr>
-                                    <th>측정 시각</th>
-                                    <th>배출구</th>
-                                    <th>운전 상태</th>
-                                    <th>계측기 상태</th>
-                                    <th>TSP (mg/m³)</th>
-                                    <th>NOX (ppm)</th>
-                                    <th>SOX (ppm)</th>
-                                    <th>O2 (%)</th>
-                                    <th>Flow (m³/h)</th>
-                                    <th>Temp (°C)</th>
-                                </tr>
-                            </thead>
-                            <tbody id="raw-tbody">
-                                <tr>
-                                    <td colspan="10" class="empty-row">수집된 5분 데이터가 없습니다. 상단에서 API 수집 버튼을 눌러주세요.</td>
-                                </tr>
-                            </tbody>
-                        </table>
+
+                    <!-- Metric Cards Grid -->
+                    <div class="metrics-grid">
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>운전 상태 (선택 배출구)</span>
+                                <i class="fa-solid fa-power-off"></i>
+                            </div>
+                            <div class="metric-value" id="val-status">운전 중</div>
+                            <div class="metric-sub" id="val-op-hours">운전 --h / 정지 --h</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>TSP (미세먼지)</span>
+                                <span class="unit">mg/m³</span>
+                            </div>
+                            <div class="metric-value" id="val-tsp">--</div>
+                            <div class="metric-sub">기준: <span id="limit-tsp">15.0</span> mg/m³</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>NOX (질소산화물)</span>
+                                <span class="unit">ppm</span>
+                            </div>
+                            <div class="metric-value" id="val-nox">--</div>
+                            <div class="metric-sub">기준: <span id="limit-nox">50.0</span> ppm</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>SOX (황산화물)</span>
+                                <span class="unit">ppm</span>
+                            </div>
+                            <div class="metric-value" id="val-sox">--</div>
+                            <div class="metric-sub">기준: <span id="limit-sox">40.0</span> ppm</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>5분/30분 검증 상태</span>
+                                <i class="fa-solid fa-square-check"></i>
+                            </div>
+                            <div class="metric-value" id="val-validation" style="font-size: 1.1rem; color: var(--accent-emerald);">엑셀 수동 분석 모드</div>
+                            <div class="metric-sub">원본 엑셀 100% 무가공 시각화</div>
+                        </div>
+                    </div>
+
+                    <!-- Charts Section -->
+                    <div class="chart-section glass-card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-area"></i> 수동 업로드 엑셀 5분/30분 시각화 차트 <span id="chart-date-range" style="font-size: 0.88rem; color: var(--accent-cyan); font-weight: 500; margin-left: 6px;"></span></h3>
+                            <div class="param-selector-box">
+                                <span class="param-label">감시 인자 선택:</span>
+                                <button class="param-btn active" data-param="TSP">TSP</button>
+                                <button class="param-btn" data-param="NOX">NOX</button>
+                                <button class="param-btn" data-param="SOX">SOX</button>
+                                <button class="param-btn" data-param="O2">O2 (%)</button>
+                                <button class="param-btn" data-param="Flow">Flow</button>
+                                <button class="param-btn" data-param="Temp">Temp</button>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="stackChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Anomaly Signal List Table -->
+                    <div class="table-section glass-card">
+                        <div class="table-header">
+                            <h3><i class="fa-solid fa-triangle-exclamation"></i> 엑셀 데이터 이상 신호 및 알람 판별 결과</h3>
+                            <span class="badge badge-warning" id="alarm-count-badge">알람 0건</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="custom-table" id="alarm-table">
+                                <thead>
+                                    <tr>
+                                        <th>발생 시각</th>
+                                        <th>배출구</th>
+                                        <th>감시 항목</th>
+                                        <th>알람 유형</th>
+                                        <th>상세 진단 내용</th>
+                                        <th>경보 등급</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="alarm-tbody">
+                                    <tr>
+                                        <td colspan="6" class="empty-row">업로드된 엑셀 파일이 없습니다. 상단에서 엑셀 파일을 업로드해주세요.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Raw Data Inspection Table -->
+                    <div class="table-section glass-card collapsible-card">
+                        <div class="table-header">
+                            <div class="title-with-filter">
+                                <h3><i class="fa-solid fa-table-list"></i> 수동 업로드 Raw Data 전수 확인</h3>
+                                <select id="raw-outlet-select" class="custom-select custom-select-sm" style="margin-left: 16px;">
+                                    <option value="ALL">전체 배출구 데이터</option>
+                                    <option value="배출구 1">배출구 1</option>
+                                    <option value="배출구 2">배출구 2</option>
+                                    <option value="배출구 3">배출구 3</option>
+                                    <option value="배출구 4">배출구 4</option>
+                                    <option value="배출구 5">배출구 5</option>
+                                </select>
+                            </div>
+                            <button id="btn-toggle-rawtable" class="btn btn-secondary btn-sm">
+                                <i class="fa-solid fa-chevron-down" id="toggle-icon"></i> <span>데이터 펼치기</span>
+                            </button>
+                        </div>
+                        <div id="raw-table-wrapper" class="table-responsive collapsed-content collapsed">
+                            <table class="custom-table" id="raw-data-table">
+                                <thead>
+                                    <tr>
+                                        <th>측정 시각</th>
+                                        <th>배출구</th>
+                                        <th>운전 상태</th>
+                                        <th>계측기 상태</th>
+                                        <th>TSP (mg/m³)</th>
+                                        <th>NOX (ppm)</th>
+                                        <th>SOX (ppm)</th>
+                                        <th>O2 (%)</th>
+                                        <th>Flow (m³/h)</th>
+                                        <th>Temp (°C)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="raw-tbody">
+                                    <tr>
+                                        <td colspan="10" class="empty-row">업로드된 원시 데이터가 없습니다. 상단에서 엑셀 파일을 업로드해주세요.</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- SUB-PANE 2: AUTOMATED ANALYSIS (30-MIN GOOGLE SHEETS) -->
+                <div id="subpane-auto" class="subpane-content" style="display: none;">
+                    <div class="card glass-card top-control-bar" style="margin-bottom: 16px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; width: 100%; flex-wrap: wrap; gap: 12px;">
+                            <div>
+                                <h4 style="margin: 0; font-size: 1.05rem; color: var(--accent-emerald);"><i class="fa-solid fa-cloud-check"></i> 30분 주기 실시간 구글 시트 데이터 모니터링</h4>
+                                <span style="font-size: 0.84rem; color: var(--text-secondary);" id="auto-last-updated">마지막 30분 수집 시각: --</span>
+                            </div>
+                            <div style="display: flex; gap: 10px; align-items: center;">
+                                <div class="outlet-selector-box">
+                                    <label for="auto-outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택:</label>
+                                    <select id="auto-outlet-select" class="custom-select">
+                                        <option value="배출구 1">배출구 1</option>
+                                        <option value="배출구 2">배출구 2</option>
+                                        <option value="배출구 3" selected>배출구 3</option>
+                                        <option value="배출구 4">배출구 4</option>
+                                        <option value="배출구 5">배출구 5</option>
+                                    </select>
+                                </div>
+                                <button id="btn-auto-refresh" class="btn btn-emerald btn-sm">
+                                    <i class="fa-solid fa-rotate-right"></i> 구글 시트 30분 실측 새로고침
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Auto Metric Cards Grid -->
+                    <div class="metrics-grid">
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>30분 실측 운전 상태</span>
+                                <i class="fa-solid fa-power-off"></i>
+                            </div>
+                            <div class="metric-value" id="auto-val-status">운전 중</div>
+                            <div class="metric-sub" id="auto-val-op-hours">삼척빛드림본부 실시간 수집</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>TSP (미세먼지)</span>
+                                <span class="unit">mg/m³</span>
+                            </div>
+                            <div class="metric-value" id="auto-val-tsp">--</div>
+                            <div class="metric-sub">기준: 15.0 mg/m³</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>NOX (질소산화물)</span>
+                                <span class="unit">ppm</span>
+                            </div>
+                            <div class="metric-value" id="auto-val-nox">--</div>
+                            <div class="metric-sub">기준: 50.0 ppm</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>SOX (황산화물)</span>
+                                <span class="unit">ppm</span>
+                            </div>
+                            <div class="metric-value" id="auto-val-sox">--</div>
+                            <div class="metric-sub">기준: 40.0 ppm</div>
+                        </div>
+                        <div class="metric-card glass-card">
+                            <div class="metric-header">
+                                <span>구글 시트 연동 상태</span>
+                                <i class="fa-solid fa-table"></i>
+                            </div>
+                            <div class="metric-value" id="auto-val-sheets" style="font-size: 1.1rem; color: var(--accent-emerald);">30분 자동 누적 중</div>
+                            <div class="metric-sub">연동: 삼척빛드림본부 시트</div>
+                        </div>
+                    </div>
+
+                    <!-- Auto 30-Min Chart Section -->
+                    <div class="chart-section glass-card">
+                        <div class="chart-header">
+                            <h3><i class="fa-solid fa-chart-line"></i> 구글 시트 누적 30분 실측 시각화 차트</h3>
+                            <div class="param-selector-box">
+                                <span class="param-label">감시 인자 선택:</span>
+                                <button class="param-btn auto-param-btn active" data-param="TSP">TSP</button>
+                                <button class="param-btn auto-param-btn" data-param="NOX">NOX</button>
+                                <button class="param-btn auto-param-btn" data-param="SOX">SOX</button>
+                            </div>
+                        </div>
+                        <div class="chart-container">
+                            <canvas id="autoStackChart"></canvas>
+                        </div>
+                    </div>
+
+                    <!-- Auto Alarm Table -->
+                    <div class="table-section glass-card">
+                        <div class="table-header">
+                            <h3><i class="fa-solid fa-triangle-exclamation"></i> 30분 실측 알람 판별 결과</h3>
+                            <span class="badge badge-warning" id="auto-alarm-badge">알람 0건</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="custom-table">
+                                <thead>
+                                    <tr>
+                                        <th>발생 시각</th>
+                                        <th>배출구</th>
+                                        <th>감시 항목</th>
+                                        <th>알람 유형</th>
+                                        <th>상세 진단 내용</th>
+                                        <th>경보 등급</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="auto-alarm-tbody">
+                                    <tr>
+                                        <td colspan="6" class="empty-row">30분 실측 수집 데이터 분석 중...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- Auto 30-Min Raw Data Table (30분 기준 기초자료 표) -->
+                    <div class="table-section glass-card">
+                        <div class="table-header">
+                            <h3><i class="fa-solid fa-table-cells"></i> 구글 시트 누적 30분 기준 기초자료 표 (100% 실측)</h3>
+                            <span class="badge badge-primary">30분 실측 DB</span>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="custom-table" id="auto-raw-data-table">
+                                <thead>
+                                    <tr>
+                                        <th>수집 시각</th>
+                                        <th>배출구</th>
+                                        <th>계측기 상태</th>
+                                        <th>TSP (mg/m³)</th>
+                                        <th>NOX (ppm)</th>
+                                        <th>SOX (ppm)</th>
+                                        <th>O2 (%)</th>
+                                        <th>Flow (m³/h)</th>
+                                        <th>Temp (°C)</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="auto-raw-tbody">
+                                    <tr>
+                                        <td colspan="9" class="empty-row">구글 시트에서 30분 실측 기초자료를 로딩 중입니다...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </section>

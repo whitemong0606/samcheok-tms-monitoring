@@ -271,73 +271,92 @@ def fetch_cleansys_data(
             "message": f"CleanSYS API 수집 및 검증 중 오류: {str(e)}"
         }
 
-@app.get("/api/cron/check")
-def cron_check_stacks():
+@app.get("/api/cron/fetch-30m")
+def cron_fetch_30m():
     """
-    30분 주기 Vercel Cron 스케줄러: 배출구 이상 징후 실시간 점검
+    30분 주기 Vercel Cron 스케줄러:
+    100% 순수 CleanSYS Open API 실측 데이터를 수신하여 구글 시트(YYYY-MM-DD 탭)에 자동 누적 저장 (Append)
     """
     try:
-        global UPLOADED_DATA
-        df = UPLOADED_DATA.get("latest")
-        if df is None or df.empty:
-            df = simulator.generate_mock_telemetry("배출구 1")
+        plant_name = "한국남부발전(주) 삼척빛드림본부"
+        region_name = "강원도 삼척시"
+        
+        df_raw = cleansys_client.get_raw_telemetry_dataframe(plant_name, region_name)
+        if df_raw.empty:
+            return {"success": False, "message": "CleanSYS API 실시간 응답 데이터 없음"}
 
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-        analyzed_df, alarms = analyzer.analyze_stack(df, "배출구 1")
-
-        sent_count = 0
-        if alarms:
-            # 알람 발생 시 텔레그램 발송
-            alarm_summary = "\n".join([f"⚠️ [{a.timestamp[-5:]}] {a.factor}: {a.message}" for a in alarms[:5]])
-            msg = f"🚨 <b>[실시간 굴뚝 이상 징후 경보]</b>\n📅 {date_str}\n\n{alarm_summary}"
-            res = telegram_bot.send_message(msg)
-            sent_count = 1
+        today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        saved = storage.append_telemetry_data(df_raw, today_str)
 
         return {
             "success": True,
-            "checked_at": date_str,
-            "alarms_found": len(alarms),
-            "telegrams_sent": sent_count
+            "fetched_at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
+            "rows_count": len(df_raw),
+            "google_sheets_saved": saved
         }
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return {"success": False, "error": f"30분 실측 API 수집 중 오류: {str(e)}"}
+
+@app.get("/api/analysis/auto")
+def get_auto_analysis_data(
+    start_date: Optional[str] = None,
+    end_date: Optional[str] = None
+):
+    """
+    [자동 분석 전용 API]
+    구글 시트에 30분 주기로 누적 저장된 100% 순수 실측 데이터 조회 및 시각화 반환
+    """
+    today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+    start_dt_str = start_date or today_str
+    end_dt_str = end_date or today_str
+
+    plant_name = "한국남부발전(주) 삼척빛드림본부"
+    region_name = "강원도 삼척시"
+    
+    df_30m, data_source = process_date_range_telemetry(start_dt_str, end_dt_str, plant_name, region_name, is_samcheok=True)
+    
+    outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+    reports = {}
+    all_alarms = []
+
+    for out in outlets:
+        out_df = df_30m[df_30m["outlet"] == out] if not df_30m.empty and "outlet" in df_30m.columns else pd.DataFrame()
+        rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
+        reports[out] = rep
+        if rep.get("raw_alarms"):
+            all_alarms.extend(rep["raw_alarms"])
+
+    return {
+        "success": True,
+        "source": data_source,
+        "period": f"{start_dt_str} ~ {end_dt_str}",
+        "outlets": outlets,
+        "reports": reports,
+        "all_alarms": all_alarms,
+        "series_30m": df_30m.fillna(0).to_dict(orient="records") if not df_30m.empty else []
+    }
 
 @app.get("/api/cron/daily-report")
 def cron_daily_report():
     """
-    하루 1회 자동 실행 CRON 스케줄러 (매일 08:00 KST):
-    1. CleanSYS Open API 전일 08:00 ~ 금일 08:00 24시간 5분 데이터 수집
-    2. 구글 워크스페이스(Google Sheets)에 5분 데이터 및 일일 요약 자동 저장
-    3. 텔레그램 일일 리포트 자동 발송
+    하루 1회 자동 실행 CRON 스케줄러 (매일 08:00 KST)
     """
     try:
         plant_name = "한국남부발전(주) 삼척빛드림본부"
-        region_name = "강원도"
+        region_name = "강원도 삼척시"
         
-        # 1. 24시간 5분 및 30분 데이터 자동 수집
-        df_5m, df_30m, val_logs = cleansys_client.generate_24h_telemetry(plant_name, region_name)
-        
-        global UPLOADED_DATA
-        UPLOADED_DATA["latest_5m"] = df_5m
-        UPLOADED_DATA["latest_30m"] = df_30m
-        
+        df_raw = cleansys_client.get_raw_telemetry_dataframe(plant_name, region_name)
         date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
 
-        # 2. 구글 워크스페이스(Google Sheets) 5분 수집 데이터 자동 저장
-        sheets_save_result = storage.append_telemetry_data(df_5m)
+        sheets_save_result = storage.append_telemetry_data(df_raw, date_str)
         
-        # 각 배출구별 일일 요약 리포트 저장 및 텔레그램 발송 메시지 생성
         outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
         reports_sent = []
 
         for out in outlets:
-            out_df = df_5m[df_5m["outlet"] == out]
+            out_df = df_raw[df_raw["outlet"] == out] if not df_raw.empty and "outlet" in df_raw.columns else pd.DataFrame()
             rep = analyzer.generate_daily_report(out_df, out, date_str)
-            
-            # 구글 시트에 배출구별 요약 저장
             storage.save_daily_report(rep)
-            
-            # 텔레그램 발송
             msg = telegram_bot.render_template(rep)
             telegram_res = telegram_bot.send_message(msg)
             reports_sent.append({"outlet": out, "telegram_status": telegram_res.get("status")})
@@ -345,7 +364,7 @@ def cron_daily_report():
         return {
             "success": True,
             "report_date": date_str,
-            "items_count_5m": len(df_5m),
+            "items_count": len(df_raw),
             "google_sheets_saved": sheets_save_result,
             "outlets_processed": reports_sent
         }
