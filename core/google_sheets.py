@@ -238,7 +238,44 @@ class GoogleSheetsStorage:
                 except Exception as e:
                     print(f"[GoogleSheetsStorage] 탭 [{date_tab}] 추가 중 오류: {e}")
 
-        return success_any
+    def clear_all_telemetry(self) -> bool:
+        """
+        자동 수집 데이터 전량 초기화 (구글 시트 누적 탭 및 로컬 캐시 삭제 후 현 시간부터 새 출발)
+        """
+        # 1. 로컬 fallback 파일 캐시 초기화
+        for path in [self.fallback_file, "core/storage_fallback.json"]:
+            if os.path.exists(path):
+                try:
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    data["telemetry_cache"] = {}
+                    with open(path, "w", encoding="utf-8") as f:
+                        json.dump(data, f, ensure_ascii=False, indent=2)
+                except Exception as e:
+                    print(f"[GoogleSheetsStorage] 로컬 캐시 초기화 오류: {e}")
+
+        # 2. 구글 시트 탭 초기화
+        if not self.spreadsheet:
+            self._connect_sheets()
+
+        if self.spreadsheet:
+            try:
+                today_tab = datetime.now(KST).strftime("%Y-%m-%d")
+                worksheets = self.spreadsheet.worksheets()
+                for ws in worksheets:
+                    if ws.title not in ["Settings", "Daily_Reports", "Logs"]:
+                        if ws.title == today_tab:
+                            ws.clear()
+                            ws.append_row(["timestamp", "outlet", "fact_manage_nm", "area_nm", "TSP", "NOX", "SOX", "O2", "Flow", "Temp"])
+                        else:
+                            try:
+                                self.spreadsheet.del_worksheet(ws)
+                            except Exception:
+                                ws.clear()
+                return True
+            except Exception as e:
+                print(f"[GoogleSheetsStorage] 구글 시트 초기화 오류: {e}")
+        return True
 
     def save_daily_report(self, report: Dict[str, Any]) -> bool:
         date_str = report.get("date", datetime.now(KST).strftime("%Y-%m-%d"))
