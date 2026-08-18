@@ -152,8 +152,17 @@ class GoogleSheetsStorage:
             samcheok_df["fact_manage_nm"] = "한국남부발전(주) 삼척빛드림본부"
             samcheok_df["area_nm"] = "강원도 삼척시"
 
+        def get_date_str(ts_val):
+            s = str(ts_val).strip()
+            digits = "".join(filter(str.isdigit, s))
+            if len(digits) >= 8:
+                return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+            if len(s) >= 10 and "-" in s:
+                return s[:10]
+            return datetime.now(KST).strftime("%Y-%m-%d")
+
         # 타임스탬프의 실제 YYYY-MM-DD 날짜별로 그룹화
-        samcheok_df["actual_date"] = samcheok_df["timestamp"].astype(str).str.slice(0, 10)
+        samcheok_df["actual_date"] = samcheok_df["timestamp"].apply(get_date_str)
         grouped = samcheok_df.groupby("actual_date")
 
         header = ["timestamp", "outlet", "fact_manage_nm", "area_nm", "TSP", "NOX", "SOX", "O2", "Flow", "Temp"]

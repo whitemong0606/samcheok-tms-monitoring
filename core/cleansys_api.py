@@ -124,11 +124,10 @@ class CleanSysAPIClient:
             else:
                 status_str = "정상"
 
-            raw_mesure_dt = item.get("mesure_dt")
-            formatted_ts = format_mesure_dt(raw_mesure_dt)
+            raw_mesure_dt = str(item.get("mesure_dt") or datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))
 
             rows.append({
-                "timestamp": formatted_ts,
+                "timestamp": raw_mesure_dt,
                 "outlet": outlet_id,
                 "fact_manage_nm": str(item.get("fact_manage_nm", fact_manage_nm)),
                 "area_nm": str(item.get("area_nm", area_nm)),
