@@ -2,9 +2,9 @@ name: 30m CleanSYS Real-Time API Cron
 
 on:
   schedule:
-    # Runs every 30 minutes (00, 30 min of every hour)
+    # Runs every 30 minutes (00 and 30 min of every hour)
     - cron: '0,30 * * * *'
-  workflow_dispatch:
+  workflow_dispatch:  # 수동 실행 버튼도 제공
 
 jobs:
   fetch-30m:
@@ -12,6 +12,16 @@ jobs:
     steps:
       - name: Trigger CleanSYS 30m Real-Time API Fetch & Google Sheets Accumulation
         run: |
-          curl -X GET "https://sctmsmonitor.vercel.app/api/cron/fetch-30m" \
+          echo "=== CleanSYS 30분 실측 API 수집 시작 - $(date '+%Y-%m-%d %H:%M:%S KST') ==="
+          HTTP_RESPONSE=$(curl -s -o /tmp/response_body.txt -w "%{http_code}" \
+            -X GET "https://sctmsmonitor.vercel.app/api/cron/fetch-30m" \
             -H "User-Agent: GitHub-Actions-Cron" \
-            --fail --silent --show-error
+            --max-time 60)
+          BODY=$(cat /tmp/response_body.txt)
+          echo "HTTP Status: $HTTP_RESPONSE"
+          echo "API Response: $BODY"
+          if [ "$HTTP_RESPONSE" != "200" ]; then
+            echo "WARNING: API returned HTTP $HTTP_RESPONSE (not 200)"
+            exit 1
+          fi
+          echo "=== 수집 완료 ==="

@@ -173,12 +173,12 @@ async def upload_file(file: UploadFile = File(...)):
         factors_keywords = {
             "timestamp": ["일시", "시간", "date", "time", "시각", "측정일시"],
             "outlet": ["배출구", "굴뚝", "stack", "outlet", "호기"],
-            "TSP": ["먼지", "tsp"],
-            "NOX": ["질소", "nox"],
-            "SOX": ["황산", "sox"],
-            "O2": ["산소", "o2"],
-            "Flow": ["유량", "flow"],
-            "Temp": ["온도", "temp"],
+            "TSP": ["먼지", "tsp", "dust"],
+            "NOX": ["질소", "nox", "no2", "질소산화"],
+            "SOX": ["황산", "sox", "so2", "황산화"],
+            "O2": ["산소", "o2(%)", "o2 (%)", "o2"],
+            "Flow": ["유량", "flow", "fl1", "fl2", " fl ", "fl("],
+            "Temp": ["온도", "temp", "tmp", "tmp(", "온도("],
             "State": ["상태", "state", "status", "구분"]
         }
 
