@@ -104,8 +104,18 @@ async function uploadFile(file) {
             method: 'POST',
             body: formData
         });
-        const res = await response.json();
-        if (res.success) {
+
+        let res;
+        const respText = await response.text();
+        try {
+            res = JSON.parse(respText);
+        } catch (e) {
+            console.error("서버 응답 JSON 파싱 실패:", respText);
+            showToast(`업로드 서버 오류 (${response.status}): ${respText.substring(0, 120)}`, 'ERROR');
+            return;
+        }
+
+        if (response.ok && res.success) {
             showToast(`✅ 업로드 완료! 총 ${res.total_rows}개 데이터 가공 및 차트/표 시각화 성공.`);
             
             // 수동 업로드 데이터 기반 직접 시각화 렌더링
@@ -125,7 +135,8 @@ async function uploadFile(file) {
                 loadAnalysisData();
             }
         } else {
-            showToast(`업로드 실패: ${res.detail || '오류 발생'}`, 'ERROR');
+            const errMsg = res.detail || res.message || '오류 발생';
+            showToast(`업로드 실패: ${errMsg}`, 'ERROR');
         }
     } catch (err) {
         showToast(`업로드 에러: ${err.message}`, 'ERROR');

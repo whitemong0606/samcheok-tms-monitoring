@@ -223,6 +223,19 @@ async def upload_file(file: UploadFile = File(...)):
         df["timestamp"] = df["timestamp"].astype(str)
         df["outlet"] = df["outlet"].astype(str)
 
+        # JSON 직렬화 안전 레코드 맵 구성 (Timestamp / NaN 방지)
+        series_records = []
+        for r in df.to_dict(orient="records"):
+            row_dict = {}
+            for k, v in r.items():
+                if pd.isna(v) or v is None:
+                    row_dict[k] = 0.0 if k in config.FACTORS else ""
+                elif hasattr(v, "strftime"):
+                    row_dict[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+                else:
+                    row_dict[k] = v
+            series_records.append(row_dict)
+
         global UPLOADED_DATA
         UPLOADED_DATA["latest"] = df
         UPLOADED_DATA["latest_5m"] = df
@@ -246,10 +259,13 @@ async def upload_file(file: UploadFile = File(...)):
             "outlets": outlets,
             "reports": reports,
             "all_alarms": all_alarms,
-            "series_5m": df.fillna(0).to_dict(orient="records")
+            "series_5m": series_records
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"파일 처리 중 오류: {str(e)}")
+        import traceback
+        err_msg = f"파일 처리 중 오류: {str(e)}"
+        print(f"[UploadError] {err_msg}\n{traceback.format_exc()}")
+        return JSONResponse(status_code=500, content={"success": False, "detail": err_msg, "message": err_msg})
 
 @app.get("/api/analysis")
 def get_analysis_data(
