@@ -68,6 +68,30 @@ def read_root():
 def health_check():
     return {"status": "ok", "timestamp": datetime.now().isoformat()}
 
+import numpy as np
+
+def sanitize_for_json(obj):
+    if isinstance(obj, dict):
+        return {str(k): sanitize_for_json(v) for k, v in obj.items()}
+    elif isinstance(obj, (list, tuple)):
+        return [sanitize_for_json(v) for v in obj]
+    elif isinstance(obj, (float, int)):
+        if pd.isna(obj) or np.isnan(obj) or np.isinf(obj):
+            return 0.0
+        return float(obj) if isinstance(obj, float) else int(obj)
+    elif isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.strftime("%Y-%m-%d %H:%M:%S")
+    elif pd.isna(obj):
+        return None
+    elif hasattr(obj, "item"):
+        val = obj.item()
+        if val is None or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
+            return 0.0
+        return val
+    elif isinstance(obj, (str, bool)):
+        return obj
+    return str(obj)
+
 @app.post("/api/upload")
 async def upload_file(file: UploadFile = File(...)):
     """
@@ -86,9 +110,15 @@ async def upload_file(file: UploadFile = File(...)):
                 except Exception:
                     df = pd.read_csv(io.BytesIO(contents), encoding="euc-kr", header=None)
         elif filename.endswith(".xlsx") or filename.endswith(".xls"):
-            df = pd.read_excel(io.BytesIO(contents), header=None)
+            try:
+                df = pd.read_excel(io.BytesIO(contents), header=None, engine="openpyxl")
+            except Exception:
+                try:
+                    df = pd.read_excel(io.BytesIO(contents), header=None, engine="xlrd")
+                except Exception:
+                    df = pd.read_excel(io.BytesIO(contents), header=None)
         else:
-            raise HTTPException(status_code=400, detail="CSV 또는 Excel 파일만 지원합니다.")
+            return JSONResponse(status_code=400, content={"success": False, "detail": "CSV 또는 Excel 파일만 지원합니다."})
 
         # 가로 다중 배출구(Wide Format) 엑셀 vs 세로 단일/다중 엑셀 자동 인식
         time_cols_indices = []
@@ -147,7 +177,6 @@ async def upload_file(file: UploadFile = File(...)):
             c_str = str(col).strip()
             c_lower = c_str.lower()
             
-            # '기준치' / '허용기준' / '기준' 컬럼 분리
             if any(k in c_lower for k in ["기준치", "허용기준", "기준", "limit"]):
                 if "먼지" in c_lower or "tsp" in c_lower:
                     col_map[col] = "TSP_LIMIT"
@@ -157,7 +186,6 @@ async def upload_file(file: UploadFile = File(...)):
                     col_map[col] = "SOX_LIMIT"
                 continue
 
-            # 실측 수치 컬럼 타겟별 중복 없는 1:1 할당
             if any(k in c_lower for k in ["일시", "시간", "date", "time", "시각", "측정일시"]) and "timestamp" not in assigned_targets:
                 col_map[col] = "timestamp"
                 assigned_targets.add("timestamp")
@@ -187,15 +215,11 @@ async def upload_file(file: UploadFile = File(...)):
                 assigned_targets.add("State")
 
         df.rename(columns=col_map, inplace=True)
-        
-        # 중복 컬럼명 제거 (첫번째 매핑 컬럼만 남겨 1D Series 세이프티 보장)
         df = df.loc[:, ~df.columns.duplicated()].copy()
 
-        # 타임스탬프 컬럼 처리
         if "timestamp" not in df.columns:
             df["timestamp"] = [datetime.now().strftime("%Y-%m-%d %H:%M:%S") for _ in range(len(df))]
 
-        # 배출구 컬럼 정규화 (1호기, 3번배출구 -> 배출구 1 ~ 배출구 5)
         if "outlet" not in df.columns:
             df["outlet"] = "배출구 1"
         else:
@@ -209,7 +233,6 @@ async def upload_file(file: UploadFile = File(...)):
                 return s
             df["outlet"] = df["outlet"].apply(norm_out)
 
-        # 수치 인자 변환 (1D Series 단일 인자 보장)
         for factor in config.FACTORS:
             if factor in df.columns:
                 target_col = df[factor]
@@ -219,11 +242,9 @@ async def upload_file(file: UploadFile = File(...)):
             else:
                 df[factor] = 0.0
 
-        # JSON 직렬화 에러 방지를 위해 timestamp 및 문자열 컬럼 안전 변환
         df["timestamp"] = df["timestamp"].astype(str)
         df["outlet"] = df["outlet"].astype(str)
 
-        # JSON 직렬화 안전 레코드 맵 구성 (Timestamp / NaN 방지)
         series_records = []
         for r in df.to_dict(orient="records"):
             row_dict = {}
@@ -251,7 +272,7 @@ async def upload_file(file: UploadFile = File(...)):
             if rep.get("raw_alarms"):
                 all_alarms.extend(rep["raw_alarms"])
 
-        return {
+        res_payload = {
             "success": True,
             "filename": file.filename,
             "total_rows": len(df),
@@ -261,6 +282,7 @@ async def upload_file(file: UploadFile = File(...)):
             "all_alarms": all_alarms,
             "series_5m": series_records
         }
+        return JSONResponse(status_code=200, content=sanitize_for_json(res_payload))
     except Exception as e:
         import traceback
         err_msg = f"파일 처리 중 오류: {str(e)}"
