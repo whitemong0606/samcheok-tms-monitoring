@@ -233,6 +233,21 @@ function initDatePickers() {
     startInput.value = formatDate(yesterday);
     endInput.value = formatDate(today);
 
+    const autoStartInput = document.getElementById('auto-date-start');
+    const autoEndInput = document.getElementById('auto-date-end');
+    const btnAutoQuery = document.getElementById('btn-auto-query');
+    if (autoStartInput && autoEndInput) {
+        autoStartInput.value = formatDate(today);
+        autoEndInput.value = formatDate(today);
+
+        autoStartInput.addEventListener('click', () => triggerPicker(autoStartInput));
+        autoEndInput.addEventListener('click', () => triggerPicker(autoEndInput));
+
+        if (btnAutoQuery) {
+            btnAutoQuery.addEventListener('click', () => loadAutoAnalysisData());
+        }
+    }
+
     // 날짜 입력창 클릭 시 브라우저 네이티브 달력 팝업 오픈 지원
     const triggerPicker = (inputEl) => {
         if (inputEl && typeof inputEl.showPicker === 'function') {
@@ -1042,7 +1057,13 @@ function initSubTabs() {
 
 async function loadAutoAnalysisData() {
     try {
-        const res = await fetch('/api/analysis/auto');
+        const autoStart = document.getElementById('auto-date-start')?.value || '';
+        const autoEnd = document.getElementById('auto-date-end')?.value || '';
+        let url = '/api/analysis/auto';
+        if (autoStart && autoEnd) {
+            url += `?start_date=${encodeURIComponent(autoStart)}&end_date=${encodeURIComponent(autoEnd)}`;
+        }
+        const res = await fetch(url);
         const data = await res.json();
         
         if (data.success) {

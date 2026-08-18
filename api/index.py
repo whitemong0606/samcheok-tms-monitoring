@@ -102,30 +102,57 @@ async def upload_file(file: UploadFile = File(...)):
             df.columns = df.iloc[header_row_idx]
             df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
 
-        # 컬럼명 매핑 정규화
+        # 컬럼명 매핑 정규화 및 중복 컬럼 분리
         col_map = {}
+        assigned_targets = set()
+        
         for col in df.columns:
-            c_lower = str(col).strip().lower()
-            if any(k in c_lower for k in ["일시", "시간", "date", "time", "시각", "측정일시"]):
+            c_str = str(col).strip()
+            c_lower = c_str.lower()
+            
+            # '기준치' / '허용기준' / '기준' 컬럼 분리
+            if any(k in c_lower for k in ["기준치", "허용기준", "기준", "limit"]):
+                if "먼지" in c_lower or "tsp" in c_lower:
+                    col_map[col] = "TSP_LIMIT"
+                elif "질소" in c_lower or "nox" in c_lower:
+                    col_map[col] = "NOX_LIMIT"
+                elif "황산" in c_lower or "sox" in c_lower:
+                    col_map[col] = "SOX_LIMIT"
+                continue
+
+            # 실측 수치 컬럼 타겟별 중복 없는 1:1 할당
+            if any(k in c_lower for k in ["일시", "시간", "date", "time", "시각", "측정일시"]) and "timestamp" not in assigned_targets:
                 col_map[col] = "timestamp"
-            elif any(k in c_lower for k in ["배출구", "굴뚝", "stack", "outlet", "호기"]):
+                assigned_targets.add("timestamp")
+            elif any(k in c_lower for k in ["배출구", "굴뚝", "stack", "outlet", "호기"]) and "outlet" not in assigned_targets:
                 col_map[col] = "outlet"
-            elif "먼지" in c_lower or "tsp" in c_lower:
+                assigned_targets.add("outlet")
+            elif ("먼지" in c_lower or "tsp" in c_lower) and "TSP" not in assigned_targets:
                 col_map[col] = "TSP"
-            elif "질소" in c_lower or "nox" in c_lower:
+                assigned_targets.add("TSP")
+            elif ("질소" in c_lower or "nox" in c_lower) and "NOX" not in assigned_targets:
                 col_map[col] = "NOX"
-            elif "황산" in c_lower or "sox" in c_lower:
+                assigned_targets.add("NOX")
+            elif ("황산" in c_lower or "sox" in c_lower) and "SOX" not in assigned_targets:
                 col_map[col] = "SOX"
-            elif "산소" in c_lower or "o2" in c_lower:
+                assigned_targets.add("SOX")
+            elif ("산소" in c_lower or "o2" in c_lower) and "O2" not in assigned_targets:
                 col_map[col] = "O2"
-            elif "유량" in c_lower or "flow" in c_lower:
+                assigned_targets.add("O2")
+            elif ("유량" in c_lower or "flow" in c_lower) and "Flow" not in assigned_targets:
                 col_map[col] = "Flow"
-            elif "온도" in c_lower or "temp" in c_lower:
+                assigned_targets.add("Flow")
+            elif ("온도" in c_lower or "temp" in c_lower) and "Temp" not in assigned_targets:
                 col_map[col] = "Temp"
-            elif "상태" in c_lower or "state" in c_lower or "status" in c_lower or "구분" in c_lower:
+                assigned_targets.add("Temp")
+            elif ("상태" in c_lower or "state" in c_lower or "status" in c_lower or "구분" in c_lower) and "State" not in assigned_targets:
                 col_map[col] = "State"
+                assigned_targets.add("State")
 
         df.rename(columns=col_map, inplace=True)
+        
+        # 중복 컬럼명 제거 (첫번째 매핑 컬럼만 남겨 1D Series 세이프티 보장)
+        df = df.loc[:, ~df.columns.duplicated()].copy()
 
         # 타임스탬프 컬럼 처리
         if "timestamp" not in df.columns:
@@ -145,10 +172,13 @@ async def upload_file(file: UploadFile = File(...)):
                 return s
             df["outlet"] = df["outlet"].apply(norm_out)
 
-        # 수치 인자 변환
+        # 수치 인자 변환 (1D Series 단일 인자 보장)
         for factor in config.FACTORS:
             if factor in df.columns:
-                df[factor] = pd.to_numeric(df[factor], errors="coerce").fillna(0.0)
+                target_col = df[factor]
+                if isinstance(target_col, pd.DataFrame):
+                    target_col = target_col.iloc[:, 0]
+                df[factor] = pd.to_numeric(target_col, errors="coerce").fillna(0.0)
             else:
                 df[factor] = 0.0
 

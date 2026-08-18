@@ -234,7 +234,7 @@
                                 <h4 style="margin: 0; font-size: 1.05rem; color: var(--accent-emerald);"><i class="fa-solid fa-cloud-check"></i> 30분 주기 실시간 구글 시트 데이터 모니터링</h4>
                                 <span style="font-size: 0.84rem; color: var(--text-secondary);" id="auto-last-updated">마지막 30분 수집 시각: --</span>
                             </div>
-                            <div style="display: flex; gap: 10px; align-items: center;">
+                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
                                 <div class="outlet-selector-box">
                                     <label for="auto-outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택:</label>
                                     <select id="auto-outlet-select" class="custom-select">
@@ -245,6 +245,17 @@
                                         <option value="배출구 5">배출구 5</option>
                                     </select>
                                 </div>
+
+                                <div style="display: flex; gap: 6px; align-items: center; background: rgba(0, 0, 0, 0.25); padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
+                                    <label for="auto-date-start" style="font-size: 0.85rem; color: #a1a1aa; white-space: nowrap;"><i class="fa-solid fa-calendar-days"></i> 조회 기간:</label>
+                                    <input type="date" id="auto-date-start" class="custom-date-input" style="min-width: 135px; padding: 4px 8px; font-size: 0.85rem;">
+                                    <span style="color: #a1a1aa;">~</span>
+                                    <input type="date" id="auto-date-end" class="custom-date-input" style="min-width: 135px; padding: 4px 8px; font-size: 0.85rem;">
+                                    <button id="btn-auto-query" class="btn btn-secondary btn-sm" style="padding: 4px 10px;">
+                                        <i class="fa-solid fa-magnifying-glass"></i> 조회
+                                    </button>
+                                </div>
+
                                 <button id="btn-auto-fetch-api" class="btn btn-emerald btn-sm" title="강원도 삼척빛드림본부 CleanSYS Open API 실시간 수치를 취득하여 구글 시트에 30분 단위로 누적 저장합니다">
                                     <i class="fa-solid fa-cloud-arrow-down"></i> API데이터 수집
                                 </button>
