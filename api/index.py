@@ -79,48 +79,78 @@ async def upload_file(file: UploadFile = File(...)):
         
         if filename.endswith(".csv"):
             try:
-                df = pd.read_csv(io.BytesIO(contents), encoding="utf-8")
+                df = pd.read_csv(io.BytesIO(contents), encoding="utf-8", header=None)
             except Exception:
                 try:
-                    df = pd.read_csv(io.BytesIO(contents), encoding="cp949")
+                    df = pd.read_csv(io.BytesIO(contents), encoding="cp949", header=None)
                 except Exception:
-                    df = pd.read_csv(io.BytesIO(contents), encoding="euc-kr")
+                    df = pd.read_csv(io.BytesIO(contents), encoding="euc-kr", header=None)
         elif filename.endswith(".xlsx") or filename.endswith(".xls"):
-            df = pd.read_excel(io.BytesIO(contents))
+            df = pd.read_excel(io.BytesIO(contents), header=None)
         else:
             raise HTTPException(status_code=400, detail="CSV 또는 Excel 파일만 지원합니다.")
 
-        # 타임스탬프 컬럼 정규화
-        time_cols = [c for c in df.columns if any(k in str(c).lower() for k in ["time", "일시", "시간", "date"])]
-        if time_cols:
-            df.rename(columns={time_cols[0]: "timestamp"}, inplace=True)
-        elif "timestamp" not in df.columns:
+        # 헤더 행 자동 탐색 (첫 15행 스캔)
+        header_row_idx = None
+        for idx in range(min(15, len(df))):
+            row_str = " ".join(df.iloc[idx].dropna().astype(str)).lower()
+            if any(k in row_str for k in ["일시", "시간", "date", "time", "먼지", "질소", "황산", "tsp", "nox", "sox", "배출구", "굴뚝"]):
+                header_row_idx = idx
+                break
+
+        if header_row_idx is not None:
+            df.columns = df.iloc[header_row_idx]
+            df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+
+        # 컬럼명 매핑 정규화
+        col_map = {}
+        for col in df.columns:
+            c_lower = str(col).strip().lower()
+            if any(k in c_lower for k in ["일시", "시간", "date", "time", "시각", "측정일시"]):
+                col_map[col] = "timestamp"
+            elif any(k in c_lower for k in ["배출구", "굴뚝", "stack", "outlet", "호기"]):
+                col_map[col] = "outlet"
+            elif "먼지" in c_lower or "tsp" in c_lower:
+                col_map[col] = "TSP"
+            elif "질소" in c_lower or "nox" in c_lower:
+                col_map[col] = "NOX"
+            elif "황산" in c_lower or "sox" in c_lower:
+                col_map[col] = "SOX"
+            elif "산소" in c_lower or "o2" in c_lower:
+                col_map[col] = "O2"
+            elif "유량" in c_lower or "flow" in c_lower:
+                col_map[col] = "Flow"
+            elif "온도" in c_lower or "temp" in c_lower:
+                col_map[col] = "Temp"
+            elif "상태" in c_lower or "state" in c_lower or "status" in c_lower or "구분" in c_lower:
+                col_map[col] = "State"
+
+        df.rename(columns=col_map, inplace=True)
+
+        # 타임스탬프 컬럼 처리
+        if "timestamp" not in df.columns:
             df["timestamp"] = [datetime.now().strftime("%Y-%m-%d %H:%M:%S") for _ in range(len(df))]
 
-        # 필수 항목 컬럼 매핑
-        column_mapping = {
-            "미세먼지": "TSP", "먼지": "TSP",
-            "질소산화물": "NOX",
-            "황산화물": "SOX",
-            "산소": "O2",
-            "유량": "Flow",
-            "온도": "Temp"
-        }
-        df.rename(columns=column_mapping, inplace=True)
+        # 배출구 컬럼 정규화 (1호기, 3번배출구 -> 배출구 1 ~ 배출구 5)
+        if "outlet" not in df.columns:
+            df["outlet"] = "배출구 1"
+        else:
+            def norm_out(v):
+                if v is None or pd.isna(v):
+                    return "배출구 1"
+                s = str(v).strip()
+                digits = "".join(filter(str.isdigit, s))
+                if digits in ["1", "2", "3", "4", "5"]:
+                    return f"배출구 {digits}"
+                return s
+            df["outlet"] = df["outlet"].apply(norm_out)
 
         # 수치 인자 변환
         for factor in config.FACTORS:
             if factor in df.columns:
-                df[factor] = pd.to_numeric(df[factor], errors="coerce")
+                df[factor] = pd.to_numeric(df[factor], errors="coerce").fillna(0.0)
             else:
-                # 미존재 시 기본값
                 df[factor] = 0.0
-
-        # 배출구 컬럼 처리 (없으면 배출구 1 지정)
-        if "outlet" not in df.columns and "배출구" not in df.columns:
-            df["outlet"] = "배출구 1"
-        elif "배출구" in df.columns:
-            df.rename(columns={"배출구": "outlet"}, inplace=True)
 
         global UPLOADED_DATA
         UPLOADED_DATA["latest"] = df

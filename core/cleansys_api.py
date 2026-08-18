@@ -6,6 +6,24 @@ from urllib.parse import quote
 
 KST = timezone(timedelta(hours=9))
 
+def format_mesure_dt(raw_dt: Any) -> str:
+    """CleanSYS API 측정일시(mesure_dt) 12자리/14자리 정수형 문자를 'YYYY-MM-DD HH:MM:SS' 표준 타임스탬프로 정규화"""
+    if not raw_dt:
+        return datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S")
+    s = str(raw_dt).strip().replace(".0", "")
+    clean_digits = "".join(filter(str.isdigit, s))
+    if len(clean_digits) == 12: # YYYYMMDDHHMM
+        return f"{clean_digits[:4]}-{clean_digits[4:6]}-{clean_digits[6:8]} {clean_digits[8:10]}:{clean_digits[10:12]}:00"
+    elif len(clean_digits) == 14: # YYYYMMDDHHMMSS
+        return f"{clean_digits[:4]}-{clean_digits[4:6]}-{clean_digits[6:8]} {clean_digits[8:10]}:{clean_digits[10:12]}:{clean_digits[12:14]}"
+    elif len(clean_digits) == 8: # YYYYMMDD
+        return f"{clean_digits[:4]}-{clean_digits[4:6]}-{clean_digits[6:8]} 00:00:00"
+    try:
+        dt = pd.to_datetime(s)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return s
+
 class CleanSysAPIClient:
     """한국환경공단 굴뚝자동측정기기(CleanSYS) 100% 순수 실시간 Open API 연동 모듈"""
     
@@ -106,8 +124,11 @@ class CleanSysAPIClient:
             else:
                 status_str = "정상"
 
+            raw_mesure_dt = item.get("mesure_dt")
+            formatted_ts = format_mesure_dt(raw_mesure_dt)
+
             rows.append({
-                "timestamp": str(item.get("mesure_dt", datetime.now(KST).strftime("%Y-%m-%d %H:%M:%S"))),
+                "timestamp": formatted_ts,
                 "outlet": outlet_id,
                 "fact_manage_nm": str(item.get("fact_manage_nm", fact_manage_nm)),
                 "area_nm": str(item.get("area_nm", area_nm)),
