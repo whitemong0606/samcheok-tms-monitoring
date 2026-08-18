@@ -706,21 +706,47 @@ function renderIntegratedChart(series5m, param) {
         dateRangeSpan.textContent = `(${firstDate} ~ ${lastDate})${intervalNotice}`;
     }
 
-    const datasets = outlets.map(out => {
-        const outData = chartSeriesData.filter(s => s.outlet === out);
-        const values = outData.map(s => s[param] !== undefined ? s[param] : 0);
+    const selectedOutlet = document.getElementById('outlet-select')?.value || 'ALL';
+    let datasets = [];
 
-        return {
-            label: out,
-            data: values,
-            borderColor: colors[out],
-            backgroundColor: 'transparent',
-            tension: 0.25,
-            borderWidth: isThreeDaysOrMore ? 1.5 : 2,
-            pointRadius: isThreeDaysOrMore ? 0.5 : 1,
-            pointHoverRadius: 5
-        };
-    });
+    if (selectedOutlet === 'ALL') {
+        datasets = outlets.map(out => {
+            const outData = chartSeriesData.filter(s => s.outlet === out);
+            const values = outData.map(s => s[param] !== undefined ? s[param] : 0);
+
+            return {
+                label: out,
+                data: values,
+                borderColor: colors[out],
+                backgroundColor: 'transparent',
+                tension: 0.25,
+                borderWidth: isThreeDaysOrMore ? 1.5 : 2,
+                pointRadius: isThreeDaysOrMore ? 0.5 : 1,
+                pointHoverRadius: 5
+            };
+        });
+    } else {
+        const outData = chartSeriesData.filter(s => s.outlet === selectedOutlet);
+        const factors = [
+            { key: "TSP", label: `${selectedOutlet} TSP (mg/m³)`, color: "#ef4444" },
+            { key: "NOX", label: `${selectedOutlet} NOX (ppm)`, color: "#0ea5e9" },
+            { key: "SOX", label: `${selectedOutlet} SOX (ppm)`, color: "#f59e0b" }
+        ];
+
+        datasets = factors.map(f => {
+            const values = outData.map(s => s[f.key] !== undefined ? s[f.key] : 0);
+            return {
+                label: f.label,
+                data: values,
+                borderColor: f.color,
+                backgroundColor: 'transparent',
+                tension: 0.25,
+                borderWidth: isThreeDaysOrMore ? 1.5 : 2,
+                pointRadius: isThreeDaysOrMore ? 0.5 : 1,
+                pointHoverRadius: 5
+            };
+        });
+    }
 
     if (stackChart) {
         stackChart.destroy();
@@ -1117,34 +1143,59 @@ function renderAutoChart(data, param) {
     if (series.length === 0) return;
 
     const selectedOutlet = document.getElementById('auto-outlet-select')?.value || 'ALL';
-    const outletsToRender = (selectedOutlet === 'ALL') 
-        ? ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"] 
-        : [selectedOutlet];
-
     const timestamps = [...new Set(series.map(s => s.timestamp))].sort();
-    const colorMap = {
-        "배출구 1": "#64748b",
-        "배출구 2": "#94a3b8",
-        "배출구 3": "#0ea5e9",
-        "배출구 4": "#10b981",
-        "배출구 5": "#f59e0b"
-    };
 
-    const datasets = outletsToRender.map(out => {
-        const outData = series.filter(s => s.outlet === out);
-        const dataMap = new Map(outData.map(s => [s.timestamp, s[param] || 0]));
-        const points = timestamps.map(ts => dataMap.get(ts) || 0);
+    let datasets = [];
 
-        return {
-            label: out,
-            data: points,
-            borderColor: colorMap[out] || "#0ea5e9",
-            backgroundColor: colorMap[out] || "#0ea5e9",
-            borderWidth: 2,
-            tension: 0.2,
-            pointRadius: 3
+    if (selectedOutlet === 'ALL') {
+        // [전체 배출구 통합 모드]: 선택한 감시 인자에 대해 5개 배출구 꺾은선 동시 시각화
+        const outletsToRender = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"];
+        const colorMap = {
+            "배출구 1": "#64748b",
+            "배출구 2": "#94a3b8",
+            "배출구 3": "#0ea5e9",
+            "배출구 4": "#10b981",
+            "배출구 5": "#f59e0b"
         };
-    });
+
+        datasets = outletsToRender.map(out => {
+            const outData = series.filter(s => s.outlet === out);
+            const dataMap = new Map(outData.map(s => [s.timestamp, s[param] || 0]));
+            const points = timestamps.map(ts => dataMap.get(ts) || 0);
+
+            return {
+                label: out,
+                data: points,
+                borderColor: colorMap[out] || "#0ea5e9",
+                backgroundColor: colorMap[out] || "#0ea5e9",
+                borderWidth: 2,
+                tension: 0.2,
+                pointRadius: 3
+            };
+        });
+    } else {
+        // [개별 배출구 선택 모드]: 해당 배출구 내 TSP, NOX, SOX 3개 감시 인자를 한 차트에 동시 시각화!
+        const outData = series.filter(s => s.outlet === selectedOutlet);
+        const factors = [
+            { key: "TSP", label: `${selectedOutlet} TSP (mg/m³)`, color: "#ef4444" },
+            { key: "NOX", label: `${selectedOutlet} NOX (ppm)`, color: "#0ea5e9" },
+            { key: "SOX", label: `${selectedOutlet} SOX (ppm)`, color: "#f59e0b" }
+        ];
+
+        datasets = factors.map(f => {
+            const dataMap = new Map(outData.map(s => [s.timestamp, s[f.key] || 0]));
+            const points = timestamps.map(ts => dataMap.get(ts) || 0);
+            return {
+                label: f.label,
+                data: points,
+                borderColor: f.color,
+                backgroundColor: f.color,
+                borderWidth: 2,
+                tension: 0.2,
+                pointRadius: 3
+            };
+        });
+    }
 
     if (autoStackChart) {
         autoStackChart.destroy();
@@ -1220,6 +1271,11 @@ function renderAutoRawDataTable(series) {
         if (st.includes('보수')) stBadge = `<span class="badge badge-warning">보수</span>`;
         if (st === '정지') stBadge = `<span class="badge badge-secondary">정지</span>`;
 
+        // CleanSYS Open API 명세상 산소/유량/온도는 미제공되므로 '-' 표기
+        const o2Disp = (r.O2 === undefined || r.O2 === 20.5 || r.O2 === 13.8) ? '-' : Number(r.O2).toFixed(1);
+        const flowDisp = (r.Flow === undefined || r.Flow === 0.0 || r.Flow === 28000.0) ? '-' : Math.round(Number(r.Flow)).toLocaleString();
+        const tempDisp = (r.Temp === undefined || r.Temp === 42.0 || r.Temp === 155.0) ? '-' : Number(r.Temp).toFixed(1);
+
         tr.innerHTML = `
             <td>${r.timestamp || ''}</td>
             <td><strong>${r.outlet || ''}</strong></td>
@@ -1227,9 +1283,9 @@ function renderAutoRawDataTable(series) {
             <td>${r.TSP !== undefined ? Number(r.TSP).toFixed(2) : '0.00'}</td>
             <td>${r.NOX !== undefined ? Number(r.NOX).toFixed(2) : '0.00'}</td>
             <td>${r.SOX !== undefined ? Number(r.SOX).toFixed(2) : '0.00'}</td>
-            <td>${r.O2 !== undefined ? Number(r.O2).toFixed(1) : '0.0'}</td>
-            <td>${r.Flow !== undefined ? Math.round(Number(r.Flow)).toLocaleString() : '0'}</td>
-            <td>${r.Temp !== undefined ? Number(r.Temp).toFixed(1) : '0.0'}</td>
+            <td style="color: #94a3b8;">${o2Disp}</td>
+            <td style="color: #94a3b8;">${flowDisp}</td>
+            <td style="color: #94a3b8;">${tempDisp}</td>
         `;
         tbody.appendChild(tr);
     });
