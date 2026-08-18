@@ -44,7 +44,10 @@ class StackAnalyzer:
         for idx, row in df.iterrows():
             if existing_state_col and pd.notna(row.get(existing_state_col)):
                 raw_st = str(row.get(existing_state_col)).strip()
-                if any(k in raw_st for k in ["정지", "STOP", "Stop", "stop", "보수", "불량"]):
+                if any(k in raw_st for k in ["점검", "자료확인"]):
+                    states.append("MAINTENANCE")
+                    continue
+                elif any(k in raw_st for k in ["정지", "STOP", "Stop", "stop", "보수", "불량", "가동중지", "미운전"]):
                     states.append("STOP")
                     continue
                 elif any(k in raw_st for k in ["운전", "OPERATING", "Operating", "operating", "가동", "정상"]):
@@ -258,13 +261,18 @@ class StackAnalyzer:
         
         state_series = df_analyzed["State"] if not df_analyzed.empty and "State" in df_analyzed.columns else pd.Series([], dtype=str)
         op_df = df_analyzed[state_series == "OPERATING"] if not df_analyzed.empty else pd.DataFrame()
-        stop_df = df_analyzed[state_series == "STOP"] if not df_analyzed.empty else pd.DataFrame()
+        maint_df = df_analyzed[state_series == "MAINTENANCE"] if not df_analyzed.empty else pd.DataFrame()
         
         time_unit = 0.5 if len(df_analyzed) <= 48 else (1.0 / 12.0)
         op_hours = round(len(op_df) * time_unit, 1)
         stop_hours = round(len(stop_df) * time_unit, 1)
         
-        status_summary = "운전 중" if len(op_df) > len(stop_df) else "정지 중"
+        if len(maint_df) > 0 and len(maint_df) >= len(op_df):
+            status_summary = "점검 중"
+        elif len(stop_df) > len(op_df):
+            status_summary = "가동 정지"
+        else:
+            status_summary = "정상 운전 중"
         
         # 운전 중 평균만 필터링 산출
         averages = {}

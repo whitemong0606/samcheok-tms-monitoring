@@ -169,50 +169,40 @@ async def upload_file(file: UploadFile = File(...)):
                 df.columns = df.iloc[header_row_idx]
                 df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
 
-        # 컬럼명 매핑 정규화 및 중복 컬럼 분리
-        col_map = {}
-        assigned_targets = set()
-        
-        for col in df.columns:
-            c_str = str(col).strip()
-            c_lower = c_str.lower()
-            
-            if any(k in c_lower for k in ["기준치", "허용기준", "기준", "limit"]):
-                if "먼지" in c_lower or "tsp" in c_lower:
-                    col_map[col] = "TSP_LIMIT"
-                elif "질소" in c_lower or "nox" in c_lower:
-                    col_map[col] = "NOX_LIMIT"
-                elif "황산" in c_lower or "sox" in c_lower:
-                    col_map[col] = "SOX_LIMIT"
-                continue
+        # 컬럼명 매핑 정규화: '보정후' / '보정값' / '보정' 컬럼 우선 선택 정밀 스코어링
+        factors_keywords = {
+            "timestamp": ["일시", "시간", "date", "time", "시각", "측정일시"],
+            "outlet": ["배출구", "굴뚝", "stack", "outlet", "호기"],
+            "TSP": ["먼지", "tsp"],
+            "NOX": ["질소", "nox"],
+            "SOX": ["황산", "sox"],
+            "O2": ["산소", "o2"],
+            "Flow": ["유량", "flow"],
+            "Temp": ["온도", "temp"],
+            "State": ["상태", "state", "status", "구분"]
+        }
 
-            if any(k in c_lower for k in ["일시", "시간", "date", "time", "시각", "측정일시"]) and "timestamp" not in assigned_targets:
-                col_map[col] = "timestamp"
-                assigned_targets.add("timestamp")
-            elif any(k in c_lower for k in ["배출구", "굴뚝", "stack", "outlet", "호기"]) and "outlet" not in assigned_targets:
-                col_map[col] = "outlet"
-                assigned_targets.add("outlet")
-            elif ("먼지" in c_lower or "tsp" in c_lower) and "TSP" not in assigned_targets:
-                col_map[col] = "TSP"
-                assigned_targets.add("TSP")
-            elif ("질소" in c_lower or "nox" in c_lower) and "NOX" not in assigned_targets:
-                col_map[col] = "NOX"
-                assigned_targets.add("NOX")
-            elif ("황산" in c_lower or "sox" in c_lower) and "SOX" not in assigned_targets:
-                col_map[col] = "SOX"
-                assigned_targets.add("SOX")
-            elif ("산소" in c_lower or "o2" in c_lower) and "O2" not in assigned_targets:
-                col_map[col] = "O2"
-                assigned_targets.add("O2")
-            elif ("유량" in c_lower or "flow" in c_lower) and "Flow" not in assigned_targets:
-                col_map[col] = "Flow"
-                assigned_targets.add("Flow")
-            elif ("온도" in c_lower or "temp" in c_lower) and "Temp" not in assigned_targets:
-                col_map[col] = "Temp"
-                assigned_targets.add("Temp")
-            elif ("상태" in c_lower or "state" in c_lower or "status" in c_lower or "구분" in c_lower) and "State" not in assigned_targets:
-                col_map[col] = "State"
-                assigned_targets.add("State")
+        col_map = {}
+        for factor, keywords in factors_keywords.items():
+            best_col = None
+            best_score = -1
+            for col in df.columns:
+                c_str = str(col).strip()
+                c_lower = c_str.lower()
+                if any(k in c_lower for k in ["기준치", "허용기준", "기준", "limit"]):
+                    continue
+                if any(k in c_lower for k in keywords):
+                    score = 10
+                    if any(k in c_lower for k in ["보정후", "보정값", "보정"]):
+                        if "보정전" not in c_lower:
+                            score += 1000
+                    elif "보정전" in c_lower or "측정값" in c_lower:
+                        score += 1
+                    if score > best_score:
+                        best_score = score
+                        best_col = col
+            if best_col is not None:
+                col_map[best_col] = factor
 
         df.rename(columns=col_map, inplace=True)
         df = df.loc[:, ~df.columns.duplicated()].copy()
