@@ -68,18 +68,14 @@ class GoogleSheetsStorage:
 
     def read_telemetry_data(self, query_date_str: str) -> Optional[pd.DataFrame]:
         """
-        [구글 시트 타임스탬프 기반 24시간 재구성 로직]
-        조회일(query_date_str, 예: 2026-08-05) 기준:
-        - 전일 탭(2026-08-04)에서 '2026-08-04 08:00:00' 이상 데이터 로드
-        - 당일 탭(2026-08-05)에서 '2026-08-05 08:00:00' 이하 데이터 로드
-        두 날짜 탭의 데이터를 합쳐 24시간 5분 시계열 재구성 반환.
+        [구글 시트 타임스탬프 기반 데이터 로드 로직]
+        조회일(query_date_str, 예: 2026-08-18) 기준:
+        - 당일 탭(2026-08-18)의 모든 실시간 실측 데이터 로드 (00:00:00 ~ 23:59:59)
+        - 24시간 연속 차트 구성을 위해 전일 탭(2026-08-17) 08:00 이후 데이터 함께 보충
         """
         try:
             query_dt = datetime.strptime(query_date_str, "%Y-%m-%d")
             prev_date_str = (query_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-            
-            start_ts = f"{prev_date_str} 08:00:00"
-            end_ts = f"{query_date_str} 08:00:00"
         except Exception:
             return None
 
@@ -89,34 +85,36 @@ class GoogleSheetsStorage:
             self._connect_sheets()
 
         if self.spreadsheet:
-            # 1. 전일 탭(YYYY-MM-DD)에서 08:00:00 이후 로드
-            try:
-                ws_prev = self.spreadsheet.worksheet(prev_date_str)
-                recs_prev = ws_prev.get_all_records()
-                for r in recs_prev:
-                    ts = str(r.get("timestamp", ""))
-                    if ts >= start_ts:
-                        combined_rows.append(r)
-            except Exception:
-                pass
-
-            # 2. 당일 탭(YYYY-MM-DD)에서 08:00:00 이전 로드
+            # 1. 당일 탭(YYYY-MM-DD)에서 최신 실시간 실측 데이터 전수 로드
             try:
                 ws_curr = self.spreadsheet.worksheet(query_date_str)
                 recs_curr = ws_curr.get_all_records()
                 for r in recs_curr:
                     ts = str(r.get("timestamp", ""))
-                    if ts <= end_ts:
+                    if ts:
                         combined_rows.append(r)
             except Exception:
                 pass
 
+            # 2. 전일 탭(YYYY-MM-DD) 데이터가 있고 당일 탭 데이터가 부족한 경우 전일 08:00 이후 데이터 보충
+            if len(combined_rows) < 48:
+                try:
+                    ws_prev = self.spreadsheet.worksheet(prev_date_str)
+                    recs_prev = ws_prev.get_all_records()
+                    start_ts = f"{prev_date_str} 08:00:00"
+                    prev_rows = [r for r in recs_prev if str(r.get("timestamp", "")) >= start_ts]
+                    combined_rows = prev_rows + combined_rows
+                except Exception:
+                    pass
+
             if combined_rows:
                 df = pd.DataFrame(combined_rows)
+                df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+                df.sort_values(by="timestamp", inplace=True)
                 if "fact_manage_nm" in df.columns:
                     samcheok_df = df[df["fact_manage_nm"].astype(str).str.contains("삼척|남부발전")]
                     if not samcheok_df.empty:
-                        print(f"[GoogleSheetsStorage] [{prev_date_str}] & [{query_date_str}] 탭에서 삼척 24h 데이터 {len(samcheok_df)}건 합성 성공!")
+                        print(f"[GoogleSheetsStorage] [{query_date_str}] 탭 삼척 실시간 데이터 {len(samcheok_df)}건 로드 성공!")
                         return samcheok_df
                 return df
 
@@ -125,13 +123,14 @@ class GoogleSheetsStorage:
             with open(self.fallback_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
                 cache = data.get("telemetry_cache", {})
-                prev_rows = cache.get(prev_date_str, [])
                 curr_rows = cache.get(query_date_str, [])
-                
-                rows = [r for r in prev_rows if str(r.get("timestamp")) >= start_ts] + \
-                       [r for r in curr_rows if str(r.get("timestamp")) <= end_ts]
+                prev_rows = cache.get(prev_date_str, [])
+                rows = prev_rows + curr_rows
                 if rows:
-                    return pd.DataFrame(rows)
+                    df = pd.DataFrame(rows)
+                    df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+                    df.sort_values(by="timestamp", inplace=True)
+                    return df
         except Exception:
             pass
 
