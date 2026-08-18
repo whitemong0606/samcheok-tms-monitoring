@@ -182,6 +182,10 @@ async def upload_file(file: UploadFile = File(...)):
             else:
                 df[factor] = 0.0
 
+        # JSON 직렬화 에러 방지를 위해 timestamp 및 문자열 컬럼 안전 변환
+        df["timestamp"] = df["timestamp"].astype(str)
+        df["outlet"] = df["outlet"].astype(str)
+
         global UPLOADED_DATA
         UPLOADED_DATA["latest"] = df
         UPLOADED_DATA["latest_5m"] = df
@@ -340,35 +344,6 @@ def fetch_cleansys_data(
             "success": False,
             "message": f"CleanSYS API 수집 및 검증 중 오류: {str(e)}"
         }
-
-@app.get("/api/cron/reset")
-@app.post("/api/cron/reset")
-def reset_telemetry_data():
-    """
-    기존 30분 실측 구글 시트 누적 데이터 및 로컬 캐시를 전량 삭제 초기화하고
-    현시간 기준 CleanSYS API 실측 데이터부터 새롭게 저장을 시작합니다.
-    """
-    try:
-        storage.clear_all_telemetry()
-        
-        plant_name = "한국남부발전(주) 삼척빛드림본부"
-        region_name = "강원도 삼척시"
-        df_raw = cleansys_client.get_raw_telemetry_dataframe(plant_name, region_name)
-        today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-        
-        saved = False
-        if not df_raw.empty:
-            saved = storage.append_telemetry_data(df_raw, today_str)
-
-        return {
-            "success": True,
-            "message": "모든 이전 자동 수집 데이터를 초기화하고 현시간 기준 수집을 새롭게 시작합니다.",
-            "cleared_at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
-            "rows_count": len(df_raw) if not df_raw.empty else 0,
-            "google_sheets_saved": saved
-        }
-    except Exception as e:
-        return {"success": False, "error": f"데이터 초기화 중 오류 발생: {str(e)}"}
 
 @app.get("/api/cron/fetch-30m")
 def cron_fetch_30m():

@@ -1014,26 +1014,6 @@ function initSubTabs() {
         });
     }
 
-    const resetApiBtn = document.getElementById('btn-auto-reset');
-    if (resetApiBtn) {
-        resetApiBtn.addEventListener('click', async () => {
-            if (!confirm('기존 누적 데이터를 전량 삭제하고 현 시간부터 새롭게 수집을 시작하시겠습니까?')) return;
-            showToast('🗑️ 기존 수집 데이터 삭제 및 현시간 수집 새로 시작 중...');
-            try {
-                const res = await fetch('/api/cron/reset', { method: 'POST' });
-                const data = await res.json();
-                if (data.success) {
-                    showToast(`🗑️ ${data.message} (${data.rows_count}건 새로 수집됨)`);
-                    loadAutoAnalysisData();
-                } else {
-                    showToast(`수집 데이터 초기화 실패: ${data.error || data.message}`, 'ERROR');
-                }
-            } catch (err) {
-                showToast(`초기화 통신 오류: ${err.message}`, 'ERROR');
-            }
-        });
-    }
-
     const refreshBtn = document.getElementById('btn-auto-refresh');
     if (refreshBtn) {
         refreshBtn.addEventListener('click', () => {
