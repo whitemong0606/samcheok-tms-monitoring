@@ -1068,8 +1068,11 @@ async function loadAutoAnalysisData() {
         
         if (data.success) {
             window.currentAutoData = data;
-            const outlet = document.getElementById('auto-outlet-select').value || '배출구 3';
-            const rep = data.reports[outlet];
+            const outletSelect = document.getElementById('auto-outlet-select');
+            const selectedOutlet = outletSelect ? outletSelect.value : 'ALL';
+            
+            const repKey = (selectedOutlet === 'ALL') ? '배출구 3' : selectedOutlet;
+            const rep = data.reports[repKey] || data.reports['배출구 3'];
 
             if (rep) {
                 document.getElementById('auto-val-status').textContent = rep.status || '운전 중';
@@ -1102,11 +1105,21 @@ function renderAutoChart(data, param) {
     const series = data.series_30m || [];
     if (series.length === 0) return;
 
-    const timestamps = [...new Set(series.map(s => s.timestamp))].sort();
-    const outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"];
-    const colors = ['#64748b', '#94a3b8', '#0ea5e9', '#10b981', '#f59e0b'];
+    const selectedOutlet = document.getElementById('auto-outlet-select')?.value || 'ALL';
+    const outletsToRender = (selectedOutlet === 'ALL') 
+        ? ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"] 
+        : [selectedOutlet];
 
-    const datasets = outlets.map((out, idx) => {
+    const timestamps = [...new Set(series.map(s => s.timestamp))].sort();
+    const colorMap = {
+        "배출구 1": "#64748b",
+        "배출구 2": "#94a3b8",
+        "배출구 3": "#0ea5e9",
+        "배출구 4": "#10b981",
+        "배출구 5": "#f59e0b"
+    };
+
+    const datasets = outletsToRender.map(out => {
         const outData = series.filter(s => s.outlet === out);
         const dataMap = new Map(outData.map(s => [s.timestamp, s[param] || 0]));
         const points = timestamps.map(ts => dataMap.get(ts) || 0);
@@ -1114,8 +1127,8 @@ function renderAutoChart(data, param) {
         return {
             label: out,
             data: points,
-            borderColor: colors[idx],
-            backgroundColor: colors[idx],
+            borderColor: colorMap[out] || "#0ea5e9",
+            backgroundColor: colorMap[out] || "#0ea5e9",
             borderWidth: 2,
             tension: 0.2,
             pointRadius: 3
@@ -1181,10 +1194,13 @@ function renderAutoRawDataTable(series) {
         return;
     }
 
-    const outlet = document.getElementById('auto-outlet-select').value || '배출구 3';
-    const filtered = series.filter(s => s.outlet === outlet);
+    const outlet = document.getElementById('auto-outlet-select')?.value || 'ALL';
+    const targetList = (outlet === 'ALL') ? series : series.filter(s => s.outlet === outlet);
 
-    const targetList = filtered.length > 0 ? filtered : series;
+    if (targetList.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="9" class="empty-row">선택한 배출구(${outlet})의 실측 데이터가 없습니다.</td></tr>`;
+        return;
+    }
 
     targetList.forEach(r => {
         const tr = document.createElement('tr');

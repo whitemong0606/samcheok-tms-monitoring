@@ -90,17 +90,54 @@ async def upload_file(file: UploadFile = File(...)):
         else:
             raise HTTPException(status_code=400, detail="CSV 또는 Excel 파일만 지원합니다.")
 
-        # 헤더 행 자동 탐색 (첫 15행 스캔)
+        # 가로 다중 배출구(Wide Format) 엑셀 vs 세로 단일/다중 엑셀 자동 인식
+        time_cols_indices = []
         header_row_idx = None
-        for idx in range(min(15, len(df))):
-            row_str = " ".join(df.iloc[idx].dropna().astype(str)).lower()
-            if any(k in row_str for k in ["일시", "시간", "date", "time", "먼지", "질소", "황산", "tsp", "nox", "sox", "배출구", "굴뚝"]):
-                header_row_idx = idx
+
+        for r_idx in range(min(15, len(df))):
+            r_vals = [str(v).strip().lower() for v in df.iloc[r_idx].fillna("").tolist()]
+            t_indices = [i for i, v in enumerate(r_vals) if any(k in v for k in ["일시", "시간", "date", "time", "시각", "측정일시"])]
+            if len(t_indices) >= 2:
+                time_cols_indices = t_indices
+                header_row_idx = r_idx
                 break
 
-        if header_row_idx is not None:
-            df.columns = df.iloc[header_row_idx]
-            df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
+        if len(time_cols_indices) >= 2:
+            # [가로 다중 배출구 Wide Format unpivoting]
+            blocks = []
+            for b_idx, start_col in enumerate(time_cols_indices):
+                end_col = time_cols_indices[b_idx + 1] if b_idx + 1 < len(time_cols_indices) else df.shape[1]
+                
+                outlet_name = f"배출구 {b_idx + 1}"
+                if header_row_idx > 0:
+                    for row_above in range(header_row_idx):
+                        val_above = str(df.iloc[row_above, start_col]).strip()
+                        if val_above and val_above.lower() not in ["nan", "none"]:
+                            digits = "".join(filter(str.isdigit, val_above))
+                            if digits in ["1", "2", "3", "4", "5"]:
+                                outlet_name = f"배출구 {digits}"
+                            else:
+                                outlet_name = val_above
+                            break
+
+                block_df = df.iloc[header_row_idx:, start_col:end_col].copy()
+                block_df.columns = block_df.iloc[0]
+                block_df = block_df.iloc[1:].reset_index(drop=True)
+                block_df["outlet"] = outlet_name
+                blocks.append(block_df)
+
+            df = pd.concat(blocks, ignore_index=True)
+        else:
+            # [세로 표준 엑셀/CSV 탐색]
+            for idx in range(min(15, len(df))):
+                row_str = " ".join(df.iloc[idx].dropna().astype(str)).lower()
+                if any(k in row_str for k in ["일시", "시간", "date", "time", "먼지", "질소", "황산", "tsp", "nox", "sox", "배출구", "굴뚝"]):
+                    header_row_idx = idx
+                    break
+
+            if header_row_idx is not None:
+                df.columns = df.iloc[header_row_idx]
+                df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
 
         # 컬럼명 매핑 정규화 및 중복 컬럼 분리
         col_map = {}
