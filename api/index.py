@@ -183,6 +183,7 @@ async def upload_file(file: UploadFile = File(...)):
         }
 
         col_map = {}
+        already_mapped_targets = set()
         for factor, keywords in factors_keywords.items():
             best_col = None
             best_score = -1
@@ -193,16 +194,18 @@ async def upload_file(file: UploadFile = File(...)):
                     continue
                 if any(k in c_lower for k in keywords):
                     score = 10
-                    if any(k in c_lower for k in ["보정후", "보정값", "보정"]):
-                        if "보정전" not in c_lower:
-                            score += 1000
+                    if "보정후" in c_lower or "보정값" in c_lower:
+                        score += 1000
+                    elif "보정" in c_lower and "보정전" not in c_lower and "보정후" not in c_lower:
+                        score += 500
                     elif "보정전" in c_lower or "측정값" in c_lower:
                         score += 1
                     if score > best_score:
                         best_score = score
                         best_col = col
-            if best_col is not None:
+            if best_col is not None and best_col not in col_map and factor not in already_mapped_targets:
                 col_map[best_col] = factor
+                already_mapped_targets.add(factor)
 
         df.rename(columns=col_map, inplace=True)
         df = df.loc[:, ~df.columns.duplicated()].copy()

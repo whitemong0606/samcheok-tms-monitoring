@@ -262,6 +262,7 @@ class StackAnalyzer:
         state_series = df_analyzed["State"] if not df_analyzed.empty and "State" in df_analyzed.columns else pd.Series([], dtype=str)
         op_df = df_analyzed[state_series == "OPERATING"] if not df_analyzed.empty else pd.DataFrame()
         maint_df = df_analyzed[state_series == "MAINTENANCE"] if not df_analyzed.empty else pd.DataFrame()
+        stop_df = df_analyzed[state_series == "STOP"] if not df_analyzed.empty else pd.DataFrame()
         
         time_unit = 0.5 if len(df_analyzed) <= 48 else (1.0 / 12.0)
         op_hours = round(len(op_df) * time_unit, 1)
