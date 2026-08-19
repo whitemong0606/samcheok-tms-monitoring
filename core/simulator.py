@@ -86,8 +86,8 @@ class StackSimulator:
             "date": date_str,
             "report_summary": report_data,
             "generated_rows": len(mock_df),
-            "detected_alarm_count": report_data["alarm_count"],
-            "raw_alarms": report_data["raw_alarms"],
+            "detected_alarm_count": report_data.get("alarm_count", 0),
+            "raw_alarms": report_data.get("alarms", []),
             "telegram_result": send_result,
             "sent_message_preview": full_message
         }

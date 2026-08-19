@@ -782,35 +782,44 @@ def cron_daily_report():
 
 @app.get("/api/settings")
 def get_settings():
+    st = storage.get_settings()
     return {
         "success": True,
-        "bot_token": telegram_bot.bot_token or "",
-        "chat_id": telegram_bot.chat_id or "",
-        "limits": default_limits.model_dump()
+        "settings": {
+            "bot_token": st.get("bot_token", config.TELEGRAM_BOT_TOKEN),
+            "chat_id": st.get("chat_id", config.TELEGRAM_CHAT_ID),
+            "google_sheet_id": st.get("google_sheet_id", config.GOOGLE_SHEET_ID),
+            "report_time": st.get("report_time", "08:30"),
+            "template": st.get("template", config.DEFAULT_TEMPLATE),
+            "limits": st.get("limits", default_limits.model_dump())
+        }
     }
 
 @app.post("/api/settings")
-def update_settings(
-    bot_token: Optional[str] = Form(None),
-    chat_id: Optional[str] = Form(None)
-):
-    if bot_token:
-        telegram_bot.bot_token = bot_token
-    if chat_id:
-        telegram_bot.chat_id = chat_id
-    return {"success": True, "message": "설정이 저장되었습니다."}
+def update_settings(payload: Dict[str, Any]):
+    if not payload:
+        return {"success": False, "message": "유효하지 않은 설정 데이터입니다."}
+    storage.save_settings(payload)
+    return {"success": True, "message": "설정이 성공적으로 저장되었습니다."}
+
+@app.post("/api/simulate")
+def run_simulation(outlet: str = "배출구 1"):
+    try:
+        res = simulator.run_simulation_test(outlet_name=outlet)
+        return {
+            "success": True,
+            "data": res
+        }
+    except Exception as e:
+        return {
+            "success": False,
+            "detail": str(e)
+        }
 
 @app.get("/api/logs")
 def get_logs(limit: int = 50):
+    logs = storage.get_logs(limit)
     return {
         "success": True,
-        "logs": [
-            {
-                "timestamp": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
-                "level": "INFO",
-                "event_type": "SYSTEM_INIT",
-                "message": "굴뚝 자동감시 시스템 30분 실측 및 모니터링 수집 모듈 정상 가동 중",
-                "status": "SUCCESS"
-            }
-        ]
+        "logs": logs
     }

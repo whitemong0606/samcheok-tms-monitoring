@@ -981,7 +981,7 @@ async function loadSettings() {
 }
 
 async function saveSettings(e) {
-    e.preventDefault();
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
     const payload = {
         bot_token: document.getElementById('bot-token').value.trim(),
         chat_id: document.getElementById('chat-id').value.trim(),
@@ -989,13 +989,13 @@ async function saveSettings(e) {
         report_time: document.getElementById('report-time').value,
         template: document.getElementById('template-text').value,
         limits: {
-            TSP: parseFloat(document.getElementById('limit-val-tsp').value),
-            NOX: parseFloat(document.getElementById('limit-val-nox').value),
-            SOX: parseFloat(document.getElementById('limit-val-sox').value)
+            TSP: parseFloat(document.getElementById('limit-val-tsp').value) || 15.0,
+            NOX: parseFloat(document.getElementById('limit-val-nox').value) || 50.0,
+            SOX: parseFloat(document.getElementById('limit-val-sox').value) || 50.0
         }
     };
 
-    showToast("설정 저장 중...");
+    showToast("⚙️ Bot 설정 및 기준치 구글 시트 저장 중...");
     try {
         const res = await fetch('/api/settings', {
             method: 'POST',
@@ -1004,10 +1004,10 @@ async function saveSettings(e) {
         });
         const data = await res.json();
         if (data.success) {
-            showToast("Bot 설정 및 기준치가 구글 시트/저장소에 성공적으로 저장되었습니다!");
+            showToast("✅ Bot 설정 및 기준치가 구글 시트에 성공적으로 저장되었습니다!");
             loadSettings();
         } else {
-            showToast("저장 실패", 'ERROR');
+            showToast(`저장 실패: ${data.message || '오류 발생'}`, 'ERROR');
         }
     } catch (err) {
         showToast(`저장 오류: ${err.message}`, 'ERROR');
@@ -1027,8 +1027,13 @@ function insertTag(tag) {
 
 // 7. System Simulation
 function initSimulation() {
-    document.getElementById('btn-run-simulation').addEventListener('click', async () => {
-        const currentOutlet = document.getElementById('outlet-select').value;
+    const btnSim = document.getElementById('btn-run-simulation');
+    if (!btnSim) return;
+
+    btnSim.addEventListener('click', async () => {
+        let currentOutlet = document.getElementById('outlet-select')?.value || '배출구 1';
+        if (currentOutlet === 'ALL') currentOutlet = '배출구 1';
+
         showToast(`🧪 가상 데이터 시뮬레이션 및 텔레그램 테스트 발송 실행 중...`);
         
         try {
@@ -1039,13 +1044,13 @@ function initSimulation() {
             
             if (data.success) {
                 const sim = data.data;
-                const isMock = sim.telegram_result.is_mock;
+                const isMock = sim.telegram_result ? sim.telegram_result.is_mock : true;
                 const mockInfo = isMock ? "(가상 발송)" : "(실제 텔레그램 전송)";
                 
-                showToast(`✅ 시뮬레이션 완료! ${sim.detected_alarm_count}건 이상 징후 감지 및 ${mockInfo} 성공!`);
+                showToast(`✅ 시뮬레이션 완료! ${sim.detected_alarm_count || 0}건 이상 징후 감지 및 ${mockInfo} 성공!`);
                 loadLogs();
             } else {
-                showToast(`시뮬레이션 오류: ${data.detail}`, 'ERROR');
+                showToast(`시뮬레이션 오류: ${data.detail || data.error || '실행 오류'}`, 'ERROR');
             }
         } catch (err) {
             showToast(`시뮬레이션 실행 실패: ${err.message}`, 'ERROR');
