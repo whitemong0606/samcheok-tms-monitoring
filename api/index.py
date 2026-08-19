@@ -124,6 +124,19 @@ async def upload_file(file: UploadFile = File(...)):
         time_cols_indices = []
         header_row_idx = None
 
+        # === 원본 엑셀 절대 열 기준: G(6),N(13),U(20),AB(27),AI(34),AP(41) 컬럼명 미리 기록 ===
+        # 헤더 행을 나중에 찾더라도 절대 열의 실제 헤더 텍스트를 보존
+        EXCEL_ABS_COL_FACTORS = {
+            "TSP":  6,   # G
+            "NOX":  13,  # N
+            "SOX":  20,  # U
+            "O2":   27,  # AB
+            "Flow": 34,  # AI
+            "Temp": 41,  # AP
+        }
+        # 헤더 행 스캔 전, 각 절대 열 위치의 실제 컬럼 헤더 텍스트를 저장
+        abs_col_header_texts = {}  # factor -> (abs_col_idx, header_text_in_that_col)
+
         for r_idx in range(min(15, len(df))):
             r_vals = [str(v).strip().lower() for v in df.iloc[r_idx].fillna("").tolist()]
             t_indices = [i for i, v in enumerate(r_vals) if any(k in v for k in ["일시", "시간", "date", "time", "시각", "측정일시"])]
@@ -166,6 +179,12 @@ async def upload_file(file: UploadFile = File(...)):
                     break
 
             if header_row_idx is not None:
+                # 절대 열 기준 헤더 텍스트 기록 (헤더 행의 실제 셀 값)
+                for factor, abs_idx in EXCEL_ABS_COL_FACTORS.items():
+                    if abs_idx < df.shape[1]:
+                        raw_hdr = str(df.iloc[header_row_idx, abs_idx]).strip()
+                        if raw_hdr and raw_hdr.lower() not in ["nan", "none", ""]:
+                            abs_col_header_texts[factor] = raw_hdr
                 df.columns = df.iloc[header_row_idx]
                 df = df.iloc[header_row_idx + 1:].reset_index(drop=True)
 
@@ -209,6 +228,34 @@ async def upload_file(file: UploadFile = File(...)):
 
         df.rename(columns=col_map, inplace=True)
         df = df.loc[:, ~df.columns.duplicated()].copy()
+
+        # ===================================================================
+        # [인덱스 기반 보정후값 폴백]
+        # 1순위: 헤더 파싱 전 절대 열(G,N,U,AB,AI,AP)에서 기록한 실제 헤더명으로 매핑
+        # 2순위: 키워드 매핑 후에도 factor가 없으면 파싱 후 컬럼 순번으로 폴백
+        # ===================================================================
+        all_cols_list = list(df.columns)
+        for factor, abs_idx in EXCEL_ABS_COL_FACTORS.items():
+            if factor in df.columns:
+                continue  # 이미 키워드 매핑 성공
+            # 1순위: 절대 열에서 기록한 헤더명으로 찾기
+            recorded_hdr = abs_col_header_texts.get(factor)
+            if recorded_hdr and recorded_hdr in df.columns:
+                df.rename(columns={recorded_hdr: factor}, inplace=True)
+                print(f"[UploadParse][AbsHdr] {factor} <- 절대 열 헤더명: '{recorded_hdr}'")
+                continue
+            # 2순위: 현재 파싱된 df 컬럼 순번으로 폴백
+            if abs_idx < len(all_cols_list):
+                fallback_col = all_cols_list[abs_idx]
+                fb_lower = str(fallback_col).lower()
+                if not any(k in fb_lower for k in ["기준치", "허용기준", "기준", "limit"]):
+                    df.rename(columns={fallback_col: factor}, inplace=True)
+                    print(f"[UploadParse][IdxFallback] {factor} <- 순번 {abs_idx} (컬럼명: '{fallback_col}')")
+
+        # 컬럼명 진단 로그
+        mapped_factors = [f for f in ['TSP','NOX','SOX','O2','Flow','Temp','timestamp','outlet'] if f in df.columns]
+        print(f"[UploadParse] 매핑 완료 factors: {mapped_factors}")
+        print(f"[UploadParse] 전체 컬럼: {list(df.columns)[:20]}")
 
         if "timestamp" not in df.columns:
             df["timestamp"] = [datetime.now().strftime("%Y-%m-%d %H:%M:%S") for _ in range(len(df))]

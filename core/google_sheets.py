@@ -165,7 +165,7 @@ class GoogleSheetsStorage:
         samcheok_df["actual_date"] = samcheok_df["timestamp"].apply(get_date_str)
         grouped = samcheok_df.groupby("actual_date")
 
-        header = ["timestamp", "outlet", "fact_manage_nm", "area_nm", "TSP", "NOX", "SOX", "O2", "Flow", "Temp"]
+        header = ["timestamp", "outlet", "fact_manage_nm", "area_nm", "status", "TSP", "NOX", "SOX", "O2", "Flow", "Temp"]
 
         if not self.spreadsheet:
             self._connect_sheets()
@@ -223,6 +223,7 @@ class GoogleSheetsStorage:
                                 str(r.get("outlet", "")),
                                 str(r.get("fact_manage_nm", "한국남부발전(주) 삼척빛드림본부")),
                                 str(r.get("area_nm", "강원도 삼척시")),
+                                str(r.get("status", "정상")),
                                 float(r.get("TSP", 0.0)),
                                 float(r.get("NOX", 0.0)),
                                 float(r.get("SOX", 0.0)),

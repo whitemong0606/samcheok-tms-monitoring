@@ -38,39 +38,50 @@ class StackAnalyzer:
             df["State"] = []
             return df
 
-        existing_state_col = next((c for c in df.columns if str(c).lower() in ["state", "상태", "운전상태", "구분"]), None)
+        # '상태/state' 컬럼 외 API 저장 'status' 컬럼도 우선 참조
+        # CleanSYS API 가 저장한 실제 상태: '가동중지', '자료확인중(점검)', '정상' 등
+        existing_state_col = next(
+            (c for c in df.columns if str(c).lower() in ["status", "state", "상태", "운전상태", "구분"]),
+            None
+        )
         states = []
         
         for idx, row in df.iterrows():
+            raw_st = ""
             if existing_state_col and pd.notna(row.get(existing_state_col)):
                 raw_st = str(row.get(existing_state_col)).strip()
-                if any(k in raw_st for k in ["점검", "자료확인"]):
-                    states.append("MAINTENANCE")
-                    continue
-                elif any(k in raw_st for k in ["정지", "STOP", "Stop", "stop", "보수", "불량", "가동중지", "미운전"]):
+            
+            # API 상태 우선 분류 (가동중지, 점검, 자료확인중 등 직접 문자열 포함)
+            if raw_st:
+                if any(k in raw_st for k in ["가동중지", "가동 중지", "미운전", "정지", "STOP", "stop"]):
                     states.append("STOP")
                     continue
-                elif any(k in raw_st for k in ["운전", "OPERATING", "Operating", "operating", "가동", "정상"]):
+                elif any(k in raw_st for k in ["점검", "자료확인", "보수", "불량"]):
+                    states.append("MAINTENANCE")
+                    continue
+                elif any(k in raw_st for k in ["정상", "운전", "OPERATING", "operating", "가동"]):
                     states.append("OPERATING")
+                    continue
+                # '미측정' 또는 빈값이 아닌 미분류 문자열은 MAINTENANCE로 처리
+                elif raw_st not in ["", "정상", "0", "0.0"]:
+                    states.append("MAINTENANCE")
                     continue
 
             o2 = row.get("O2", np.nan)
             temp = row.get("Temp", np.nan)
             flow = row.get("Flow", np.nan)
             
-            if pd.isna(o2):
+            if pd.isna(o2) or o2 == 0:
                 states.append("UNKNOWN")
                 continue
                 
-            # 정지 조건
+            # O2 기반 정지/운전 판별 (API에서 O2 값 없는 경우 기본 OPERATING)
             is_stop = (o2 >= config.STOP_O2_THRESHOLD) or (
                 (pd.notna(temp) and temp < config.STOP_TEMP_THRESHOLD) and 
                 (pd.notna(flow) and flow < config.STOP_FLOW_THRESHOLD)
             )
-            
-            # 운전 조건
             is_op = (o2 <= config.OPERATING_O2_THRESHOLD) or (
-                (pd.notna(flow) and flow >= config.STOP_FLOW_THRESHOLD) and 
+                (pd.notna(flow) and flow >= config.STOP_FLOW_THRESHOLD) and
                 (pd.notna(temp) and temp >= config.STOP_TEMP_THRESHOLD)
             )
             
@@ -79,13 +90,11 @@ class StackAnalyzer:
             elif is_op:
                 states.append("OPERATING")
             else:
-                if o2 > 18.0:
-                    states.append("STOP")
-                else:
-                    states.append("OPERATING")
+                states.append("STOP" if o2 > 18.0 else "OPERATING")
                     
         df["State"] = states
         return df
+
 
     def analyze_stack(self, df: pd.DataFrame, outlet_name: str) -> Tuple[pd.DataFrame, List[AlarmEvent]]:
         """
