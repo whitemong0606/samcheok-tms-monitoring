@@ -1120,13 +1120,22 @@ async function loadAutoAnalysisData() {
             const hoursEl = document.getElementById('auto-val-op-hours');
             const series30m = data.series_30m || [];
 
-            // 배출구별 가장 최신 row의 status를 추출 (CleanSYS 원문 상태)
+            // 배출구별 가장 최신 row의 status를 추출 (CleanSYS 원문 상태 및 행 전체 문구 탐색)
             const latestStatusByOutlet = {};
             allOutlets.forEach(out => {
                 const outRows = series30m.filter(s => s.outlet === out);
                 if (outRows.length > 0) {
                     const latestRow = outRows.reduce((a, b) => a.timestamp > b.timestamp ? a : b);
-                    latestStatusByOutlet[out] = latestRow.status || '';
+                    let st = latestRow.status || '';
+                    const rowStr = Object.values(latestRow).map(v => String(v || '')).join(' ');
+                    if (/가동중지|가동 중지|미운전|정지/i.test(rowStr)) {
+                        st = '가동정지';
+                    } else if (/점검|자료확인|자료 확인|보수|불량/i.test(rowStr)) {
+                        st = '점검 중';
+                    }
+                    latestStatusByOutlet[out] = st;
+                } else if (data.reports && data.reports[out]) {
+                    latestStatusByOutlet[out] = data.reports[out].status || '';
                 }
             });
 

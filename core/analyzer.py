@@ -46,31 +46,19 @@ class StackAnalyzer:
         states = []
         
         for idx, row in df.iterrows():
-            raw_st = ""
-            if existing_state_col and pd.notna(row.get(existing_state_col)):
-                raw_st = str(row.get(existing_state_col)).strip()
+            # 1. 행 내 모든 텍스트 값 검사 (status/TSP/NOX/SOX 등 어느 열에든 가동중지/점검 문구가 있는 경우 탐색)
+            row_text = " ".join([str(v).strip() for v in row.values if pd.notna(v) and str(v).strip() != ""])
             
-            # ── [경로 A] status 컬럼이 실제 상태 문자열인 경우 (API 수집 데이터) ──
-            if raw_st and raw_st not in ["정상", "0", "0.0", ""]:
-                # 가동중지 / 정지 계열
-                if any(k in raw_st for k in ["가동중지", "가동 중지", "미운전", "정지", "STOP", "stop"]):
-                    states.append("STOP")
-                    continue
-                # 점검 / 자료확인 / 보수 계열
-                elif any(k in raw_st for k in ["점검", "자료확인", "보수", "불량", "자료 확인"]):
-                    states.append("MAINTENANCE")
-                    continue
-                # 명시적 운전 확인
-                elif any(k in raw_st for k in ["운전", "OPERATING", "operating", "가동"]):
-                    states.append("OPERATING")
-                    continue
-                # 미분류 비표준 문자열 → 점검으로 처리
-                else:
-                    states.append("MAINTENANCE")
-                    continue
-            
-            # ── [경로 B] status='정상' 또는 없는 경우 → O2/Temp/Flow 기반 판별 ──
-            # (수동 엑셀 업로드 데이터, 또는 API 정상 수치 데이터)
+            # 가동중지 / 정지 계열 문가 검지 → 무조건 가동정지(STOP)
+            if any(k in row_text for k in ["가동중지", "가동 중지", "미운전", "정지", "STOP", "stop"]):
+                states.append("STOP")
+                continue
+            # 점검 / 자료확인 / 보수 계열 문구 검지 → 점검 중(MAINTENANCE)
+            elif any(k in row_text for k in ["점검", "자료확인", "보수", "불량", "자료 확인"]):
+                states.append("MAINTENANCE")
+                continue
+
+            # 2. O2 / Temp / Flow 실측 수치 기반 물리적 상태 판별 (수동 엑셀 업로드 파일 등)
             o2   = row.get("O2", np.nan)
             temp = row.get("Temp", np.nan)
             flow = row.get("Flow", np.nan)
@@ -87,39 +75,42 @@ class StackAnalyzer:
             temp_f = safe_f(temp)
             flow_f = safe_f(flow)
             
-            # O2/Temp/Flow 모두 없거나 0이면 (API 미제공) → status='정상'이면 OPERATING
+            # O2/Temp/Flow 실측값이 전혀 없는 경우 (CleanSYS API 순수 제공 데이터)
             has_o2   = o2_f is not None and o2_f > 0
             has_temp = temp_f is not None and temp_f > 0
             has_flow = flow_f is not None and flow_f > 0
             
             if not has_o2 and not has_temp and not has_flow:
-                # API 데이터 정상 수치 수신 → 운전 중
-                states.append("OPERATING" if raw_st == "정상" else "UNKNOWN")
+                # O2/Temp/Flow가 없는데 status 문구도 없으면 정상 운전으로 처리
+                states.append("OPERATING")
                 continue
             
-            # O2/Temp/Flow 실측값 기반 판별 (수동 업로드)
-            is_stop = False
-            is_op   = False
-            
-            if o2_f is not None:
-                if o2_f >= config.STOP_O2_THRESHOLD:      # O2 >= 19.5% → 정지
-                    is_stop = True
-                elif o2_f <= config.OPERATING_O2_THRESHOLD:  # O2 <= 16% → 운전
-                    is_op = True
-            
-            if temp_f is not None and flow_f is not None:
-                if temp_f < config.STOP_TEMP_THRESHOLD and flow_f < config.STOP_FLOW_THRESHOLD:
-                    is_stop = True
-                elif temp_f >= config.STOP_TEMP_THRESHOLD and flow_f >= config.STOP_FLOW_THRESHOLD:
-                    is_op = True
-            
-            if is_stop and not is_op:
+            # O2/Temp/Flow 수치가 존재하는 경우 (수동 엑셀 업로드 파일 분석)
+            # O2 >= 19.0% : 연소 중단 후 대기 유입 (공기 20.9% 수준) → 무조건 가동정지 (STOP)
+            if o2_f is not None and o2_f >= 19.0:
                 states.append("STOP")
-            elif is_op:
+                continue
+            
+            # Temp < 50.0℃ AND Flow < 1000.0 m³/min → 무조건 가동정지 (STOP)
+            if temp_f is not None and flow_f is not None and temp_f < 50.0 and flow_f < 1000.0:
+                states.append("STOP")
+                continue
+
+            # Flow < 300.0 m³/min → 무조건 가동정지 (STOP)
+            if flow_f is not None and flow_f < 300.0:
+                states.append("STOP")
+                continue
+
+            # O2 <= 16.0% 또는 (Temp >= 60.0℃ 및 Flow >= 1000.0) → 정상 운전 (OPERATING)
+            if (o2_f is not None and o2_f <= 16.0) or (temp_f is not None and flow_f is not None and temp_f >= 60.0 and flow_f >= 1000.0):
                 states.append("OPERATING")
+                continue
+
+            # O2 > 18.0% 이면 가동정지, 이하 정상 운전
+            if o2_f is not None and o2_f > 18.0:
+                states.append("STOP")
             else:
-                # O2 단독 판단
-                states.append("STOP" if (o2_f is not None and o2_f > 18.0) else "OPERATING")
+                states.append("OPERATING")
                     
         df["State"] = states
         return df
