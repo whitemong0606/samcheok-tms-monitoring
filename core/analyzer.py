@@ -46,71 +46,44 @@ class StackAnalyzer:
         states = []
         
         for idx, row in df.iterrows():
-            # 1. 행 내 모든 텍스트 값 검사 (status/TSP/NOX/SOX 등 어느 열에든 가동중지/점검 문구가 있는 경우 탐색)
-            row_text = " ".join([str(v).strip() for v in row.values if pd.notna(v) and str(v).strip() != ""])
-            
-            # 가동중지 / 정지 계열 문가 검지 → 무조건 가동정지(STOP)
-            if any(k in row_text for k in ["가동중지", "가동 중지", "미운전", "정지", "STOP", "stop"]):
-                states.append("STOP")
-                continue
-            # 점검 / 자료확인 / 보수 계열 문구 검지 → 점검 중(MAINTENANCE)
-            elif any(k in row_text for k in ["점검", "자료확인", "보수", "불량", "자료 확인"]):
-                states.append("MAINTENANCE")
-                continue
-
-            # 2. O2 / Temp / Flow 실측 수치 기반 물리적 상태 판별 (수동 엑셀 업로드 파일 등)
-            o2   = row.get("O2", np.nan)
-            temp = row.get("Temp", np.nan)
-            flow = row.get("Flow", np.nan)
-            
             def safe_f(v):
-                if pd.isna(v) or v == "":
+                if pd.isna(v) or v == "" or str(v).strip().lower() in ["nan", "none"]:
                     return None
                 try:
                     return float(v)
                 except (ValueError, TypeError):
                     return None
+
+            o2_f   = safe_f(row.get("O2"))
+            temp_f = safe_f(row.get("Temp"))
+            flow_f = safe_f(row.get("Flow"))
             
-            o2_f   = safe_f(o2)
-            temp_f = safe_f(temp)
-            flow_f = safe_f(flow)
-            
-            # O2/Temp/Flow 실측값이 전혀 없는 경우 (CleanSYS API 순수 제공 데이터)
-            has_o2   = o2_f is not None and o2_f > 0
-            has_temp = temp_f is not None and temp_f > 0
-            has_flow = flow_f is not None and flow_f > 0
-            
-            if not has_o2 and not has_temp and not has_flow:
-                # O2/Temp/Flow가 없는데 status 문구도 없으면 정상 운전으로 처리
-                states.append("OPERATING")
-                continue
-            
-            # O2/Temp/Flow 수치가 존재하는 경우 (수동 엑셀 업로드 파일 분석)
-            # O2 >= 19.0% : 연소 중단 후 대기 유입 (공기 20.9% 수준) → 무조건 가동정지 (STOP)
-            if o2_f is not None and o2_f >= 19.0:
+            status_val = str(row.get("status", "")).strip()
+
+            # 1. O2 / Temp / Flow 수치 기준 무조건 가동정지 (STOP)
+            # O2 >= 19.5% -> 대기 유입 (연소 중단) -> STOP
+            if o2_f is not None and o2_f >= 19.5:
                 states.append("STOP")
                 continue
-            
-            # Temp < 50.0℃ AND Flow < 1000.0 m³/min → 무조건 가동정지 (STOP)
-            if temp_f is not None and flow_f is not None and temp_f < 50.0 and flow_f < 1000.0:
+            # Flow <= 100 m3/h -> 유량 없음 -> STOP
+            if flow_f is not None and flow_f <= 100.0:
+                states.append("STOP")
+                continue
+            # Temp <= 30.0 °C -> 배가스 온도 없음 -> STOP
+            if temp_f is not None and temp_f <= 30.0:
                 states.append("STOP")
                 continue
 
-            # Flow < 300.0 m³/min → 무조건 가동정지 (STOP)
-            if flow_f is not None and flow_f < 300.0:
+            # 2. 텍스트 상태 뱃지 판별
+            if any(k in status_val for k in ["가동중지", "가동 중지", "미운전", "정지", "STOP", "stop"]):
                 states.append("STOP")
                 continue
-
-            # O2 <= 16.0% 또는 (Temp >= 60.0℃ 및 Flow >= 1000.0) → 정상 운전 (OPERATING)
-            if (o2_f is not None and o2_f <= 16.0) or (temp_f is not None and flow_f is not None and temp_f >= 60.0 and flow_f >= 1000.0):
-                states.append("OPERATING")
+            elif any(k in status_val for k in ["점검", "자료확인", "보수", "불량"]):
+                states.append("MAINTENANCE")
                 continue
 
-            # O2 > 18.0% 이면 가동정지, 이하 정상 운전
-            if o2_f is not None and o2_f > 18.0:
-                states.append("STOP")
-            else:
-                states.append("OPERATING")
+            # 3. O2 < 19.5% AND Flow > 100 AND Temp > 30.0 -> 정상 운전 (OPERATING)
+            states.append("OPERATING")
                     
         df["State"] = states
         return df

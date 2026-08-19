@@ -608,7 +608,56 @@ function initParamButtons() {
 
 function renderMetricCards(report) {
     const selectedOutlet = document.getElementById('outlet-select')?.value || 'ALL';
+    const allOutlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"];
+    const statusElem = document.getElementById('val-status');
+    const hoursElem = document.getElementById('val-op-hours');
     
+    // 배출구별 최신 실시간 데이터 및 물리 상태(O2, Flow, Temp) 판별
+    const latestStatusByOutlet = {};
+    if (CURRENT_ANALYSIS_DATA && CURRENT_ANALYSIS_DATA.series_5m) {
+        allOutlets.forEach(out => {
+            const outRows = CURRENT_ANALYSIS_DATA.series_5m.filter(s => s.outlet === out);
+            if (outRows.length > 0) {
+                const latestRow = outRows.reduce((a, b) => (a.timestamp || '') > (b.timestamp || '') ? a : b);
+                
+                const parseNum = v => (v === undefined || v === null || v === '' || isNaN(v)) ? null : Number(v);
+                const o2 = parseNum(latestRow.O2);
+                const flow = parseNum(latestRow.Flow);
+                const temp = parseNum(latestRow.Temp);
+                const rowStr = Object.values(latestRow).map(v => String(v || '')).join(' ');
+
+                if (o2 !== null && o2 >= 19.5) {
+                    latestStatusByOutlet[out] = '가동정지';
+                } else if (flow !== null && flow <= 100) {
+                    latestStatusByOutlet[out] = '가동정지';
+                } else if (temp !== null && temp <= 30) {
+                    latestStatusByOutlet[out] = '가동정지';
+                } else if (/가동중지|가동 중지|미운전|정지|STOP/i.test(rowStr)) {
+                    latestStatusByOutlet[out] = '가동정지';
+                } else if (/점검|자료확인|자료 확인|보수|불량/i.test(rowStr)) {
+                    latestStatusByOutlet[out] = '점검 중';
+                } else {
+                    latestStatusByOutlet[out] = '정상 운전 중';
+                }
+            } else if (CURRENT_ANALYSIS_DATA.reports && CURRENT_ANALYSIS_DATA.reports[out]) {
+                latestStatusByOutlet[out] = CURRENT_ANALYSIS_DATA.reports[out].status || '정상 운전 중';
+            }
+        });
+    }
+
+    const formatStatus = (st) => {
+        if (!st || st.includes('운전') || st === '정상') {
+            return { icon: '🟢', label: '정상 운전 중' };
+        }
+        if (st.includes('정지')) {
+            return { icon: '🔴', label: '가동정지' };
+        }
+        if (st.includes('점검') || st.includes('보수')) {
+            return { icon: '🟡', label: '점검 중' };
+        }
+        return { icon: '🟢', label: st };
+    };
+
     if (selectedOutlet === 'ALL' && CURRENT_ANALYSIS_DATA && CURRENT_ANALYSIS_DATA.reports) {
         const reps = Object.values(CURRENT_ANALYSIS_DATA.reports);
         const tspArr = reps.map(r => r.avg_tsp).filter(v => v !== undefined && v !== null);
@@ -616,35 +665,34 @@ function renderMetricCards(report) {
         const soxArr = reps.map(r => r.avg_sox).filter(v => v !== undefined && v !== null);
         const mean = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : '--';
         
-        let opCount = 0;
-        let stopCount = 0;
-        reps.forEach(r => {
-            if (r.status && r.status.includes('정지')) stopCount++;
-            else opCount++;
-        });
-
-        const statusElem = document.getElementById('val-status');
         if (statusElem) {
-            statusElem.innerHTML = `<span style="color: var(--accent-emerald);">🟢 ${opCount}개 운전</span> <span style="color: #94a3b8; font-size: 0.88em;">/ 🔴 ${stopCount}개 정지</span>`;
+            const statusLines = allOutlets.map(out => {
+                const rawSt = latestStatusByOutlet[out];
+                if (rawSt === undefined) return `${out}: ❓ 데이터 없음`;
+                const { icon, label } = formatStatus(rawSt);
+                return `${out}: ${icon} ${label}`;
+            });
+            statusElem.innerHTML = statusLines.map(l =>
+                `<span style="display:block;font-size:0.82rem;line-height:1.8;">${l}</span>`
+            ).join('');
+            statusElem.style.fontSize = '0.82rem';
         }
-        document.getElementById('val-op-hours').textContent = `전체 5개 배출구 통합 요약`;
+        if (hoursElem) hoursElem.textContent = '전체 5개 배출구 실시간 상태';
+
         document.getElementById('val-tsp').textContent = mean(tspArr);
         document.getElementById('val-nox').textContent = mean(noxArr);
         document.getElementById('val-sox').textContent = mean(soxArr);
     } else {
         report = report || {};
-        const statusStr = report.status || '정상 운전 중';
-        const statusElem = document.getElementById('val-status');
+        const rawSt = latestStatusByOutlet[selectedOutlet] || report.status || '정상 운전 중';
+        const { icon, label } = formatStatus(rawSt);
         if (statusElem) {
-            if (statusStr.includes('정지')) {
-                statusElem.innerHTML = `<span style="color: var(--accent-rose);">🔴 가동정지</span>`;
-            } else if (statusStr.includes('점검') || statusStr.includes('보수')) {
-                statusElem.innerHTML = `<span style="color: var(--accent-amber);">🟡 점검중</span>`;
-            } else {
-                statusElem.innerHTML = `<span style="color: var(--accent-emerald);">🟢 정상 운전 중</span>`;
-            }
+            statusElem.textContent = `${icon} ${label}`;
+            statusElem.style.fontSize = '';
         }
-        document.getElementById('val-op-hours').textContent = `운전 ${report.operating_hours || 0}h / 정지 ${report.stop_hours || 0}h`;
+        if (hoursElem) {
+            hoursElem.textContent = `운전 ${report.operating_hours || 0}h / 정지 ${report.stop_hours || 0}h`;
+        }
         document.getElementById('val-tsp').textContent = report.avg_tsp !== undefined ? report.avg_tsp : '--';
         document.getElementById('val-nox').textContent = report.avg_nox !== undefined ? report.avg_nox : '--';
         document.getElementById('val-sox').textContent = report.avg_sox !== undefined ? report.avg_sox : '--';
