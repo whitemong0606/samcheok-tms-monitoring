@@ -268,11 +268,29 @@ async def upload_file(file: UploadFile = File(...)):
             df["timestamp"] = [datetime.now().strftime("%Y-%m-%d %H:%M:%S") for _ in range(len(df))]
 
         if "outlet" not in df.columns:
-            df["outlet"] = "배출구 1"
+            detected_out_num = "3"
+            fname = str(file.filename) if hasattr(file, 'filename') else ""
+            if any(k in fname for k in ["3호기", "3번", "배출구3", "배출구 3"]):
+                detected_out_num = "3"
+            elif any(k in fname for k in ["1호기", "1번", "배출구1", "배출구 1"]):
+                detected_out_num = "1"
+            elif any(k in fname for k in ["2호기", "2번", "배출구2", "배출구 2"]):
+                detected_out_num = "2"
+            elif any(k in fname for k in ["4호기", "4번", "배출구4", "배출구 4"]):
+                detected_out_num = "4"
+            elif any(k in fname for k in ["5호기", "5번", "배출구5", "배출구 5"]):
+                detected_out_num = "5"
+            else:
+                all_text = " ".join(df.columns.astype(str))
+                for num_str in ["3", "1", "2", "4", "5"]:
+                    if f"{num_str}호기" in all_text or f"배출구 {num_str}" in all_text or f"배출구{num_str}" in all_text:
+                        detected_out_num = num_str
+                        break
+            df["outlet"] = f"배출구 {detected_out_num}"
         else:
             def norm_out(v):
                 if v is None or pd.isna(v):
-                    return "배출구 1"
+                    return "배출구 3"
                 s = str(v).strip()
                 digits = "".join(filter(str.isdigit, s))
                 if digits in ["1", "2", "3", "4", "5"]:

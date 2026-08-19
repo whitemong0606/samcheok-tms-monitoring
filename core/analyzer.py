@@ -74,12 +74,9 @@ class StackAnalyzer:
                 states.append("STOP")
                 continue
 
-            # 2. 텍스트 상태 뱃지 판별
+            # 2. 텍스트 상태 판별 (명시적 가동정지 문구 포함 여부)
             if any(k in status_val for k in ["가동중지", "가동 중지", "미운전", "정지", "STOP", "stop"]):
                 states.append("STOP")
-                continue
-            elif any(k in status_val for k in ["점검", "자료확인", "보수", "불량"]):
-                states.append("MAINTENANCE")
                 continue
 
             # 3. O2 < 19.5% AND Flow > 100 AND Temp > 30.0 -> 정상 운전 (OPERATING)
