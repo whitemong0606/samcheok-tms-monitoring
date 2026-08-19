@@ -179,6 +179,12 @@ class GoogleSheetsStorage:
                 df = self.normalize_telemetry_df(df)
                 df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
                 df.sort_values(by="timestamp", inplace=True)
+
+                # CleanSYS Open API 미제공 항목(O2, Flow, Temp) 내 잔존하는 임의 가짜 수치(13.8, 28000.0 등) 완전 소거 및 빈칸화
+                for col in ["O2", "Flow", "Temp"]:
+                    if col in df.columns:
+                        df[col] = ""
+
                 print(f"[GoogleSheetsStorage] [{query_date_str}] 탭 데이터 {len(df)}건 정규화 로드 성공!")
                 return df
 
@@ -195,6 +201,9 @@ class GoogleSheetsStorage:
                     df = self.normalize_telemetry_df(df)
                     df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
                     df.sort_values(by="timestamp", inplace=True)
+                    for col in ["O2", "Flow", "Temp"]:
+                        if col in df.columns:
+                            df[col] = ""
                     return df
         except Exception as e:
             print(f"[GoogleSheetsStorage] 로컬 캐시 로드 예외: {e}")

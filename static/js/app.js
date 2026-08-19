@@ -1202,7 +1202,7 @@ async function loadAutoAnalysisData() {
 
             renderAutoChart(data, 'TSP');
             renderAutoAlarmTable(data.all_alarms);
-            renderAutoRawDataTable(data.series_30m);
+            renderAutoRawDataTable(data.series_30m, data.all_alarms);
         } else {
             showToast(`자동 분석 데이터 조회 오류: ${data.message}`, 'ERROR');
         }
@@ -1322,7 +1322,7 @@ function renderAutoAlarmTable(alarms) {
     });
 }
 
-function renderAutoRawDataTable(series) {
+function renderAutoRawDataTable(series, alarms) {
     const tbody = document.getElementById('auto-raw-tbody');
     if (!tbody) return;
 
@@ -1332,43 +1332,87 @@ function renderAutoRawDataTable(series) {
         return;
     }
 
+    const alarmMap = {};
+    if (alarms) {
+        alarms.forEach(a => {
+            const key = `${a.timestamp}_${a.outlet}_${a.factor}`;
+            alarmMap[key] = a.level;
+            if (a.factor === 'ALL' || a.factor === 'STOP_MONITOR') {
+                alarmMap[`${a.timestamp}_${a.outlet}_ALL`] = a.level;
+            }
+        });
+    }
+
     const outlet = document.getElementById('auto-outlet-select')?.value || 'ALL';
-    const targetList = (outlet === 'ALL') ? series : series.filter(s => s.outlet === outlet);
+    let targetList = (outlet === 'ALL') ? [...series] : series.filter(s => s.outlet === outlet);
 
     if (targetList.length === 0) {
         tbody.innerHTML = `<tr><td colspan="9" class="empty-row">선택한 배출구(${outlet})의 실측 데이터가 없습니다.</td></tr>`;
         return;
     }
 
+    // 기본 정렬 우선순위: 배출구 별 (배출구 1 -> 배출구 2 -> 배출구 3 -> 배출구 4 -> 배출구 5), 그 다음 수집 시각 순
+    targetList.sort((a, b) => {
+        const outA = String(a.outlet || '');
+        const outB = String(b.outlet || '');
+        if (outA !== outB) {
+            return outA.localeCompare(outB, 'ko', { numeric: true });
+        }
+        return String(a.timestamp || '').localeCompare(String(b.timestamp || ''));
+    });
+
+    const fragment = document.createDocumentFragment();
+
     targetList.forEach(r => {
         const tr = document.createElement('tr');
-        const st = String(r.status || '').trim();
-        
+        const ts = r.timestamp || '';
+        const out = r.outlet || '';
+
+        // 행 내 모든 텍스트 값 검사하여 가동정지/점검 중 상태 뱃지 및 스타일링 생성
+        const rowStr = Object.values(r).map(v => String(v || '')).join(' ');
         let stBadge = `<span class="badge badge-success">정상</span>`;
-        if (/가동중지|가동 중지|미운전|정지/i.test(st)) {
+        let statusCellClass = '';
+
+        if (/가동중지|가동 중지|미운전|정지/i.test(rowStr)) {
             stBadge = `<span class="badge badge-secondary">가동정지</span>`;
-        } else if (/점검|자료확인|보수|불량/i.test(st)) {
-            stBadge = `<span class="badge badge-warning">점검중</span>`;
-        } else if (st !== '정상' && st !== '0' && st !== '0.0' && st !== '') {
-            stBadge = `<span class="badge badge-info">${st}</span>`;
+        } else if (/점검|자료확인|보수|불량/i.test(rowStr)) {
+            stBadge = `<span class="badge badge-warning" style="background: rgba(245, 158, 11, 0.25); color: #fef08a; border: 1px solid #f59e0b;"><i class="fa-solid fa-wrench"></i> 점검중</span>`;
+            statusCellClass = 'cell-alarm-warning';
         }
 
-        // CleanSYS Open API 명세상 산소/유량/온도는 미제공되므로 '-' 표기 (값이 0일때도 - 표기)
-        const o2Disp = (!r.O2 || r.O2 === 0 || r.O2 === '0.0' || r.O2 === 20.5 || r.O2 === 13.8) ? '-' : Number(r.O2).toFixed(1);
-        const flowDisp = (!r.Flow || r.Flow === 0 || r.Flow === '0.0' || r.Flow === 28000.0) ? '-' : Math.round(Number(r.Flow)).toLocaleString();
-        const tempDisp = (!r.Temp || r.Temp === 0 || r.Temp === '0.0' || r.Temp === 42.0 || r.Temp === 155.0) ? '-' : Number(r.Temp).toFixed(1);
+        function getCellClass(factor) {
+            const level = alarmMap[`${ts}_${out}_${factor}`] || alarmMap[`${ts}_${out}_ALL`];
+            if (level === 'CRITICAL') return 'cell-alarm-critical';
+            if (level === 'WARNING') return 'cell-alarm-warning';
+            return '';
+        }
+
+        const tspClass = getCellClass('TSP');
+        const noxClass = getCellClass('NOX');
+        const soxClass = getCellClass('SOX');
+
+        // CleanSYS Open API 명세상 산소/유량/온도는 미제공되므로 '-' 표기 (임의 가짜 수치 삽입 제거)
+        const o2Disp = '-';
+        const flowDisp = '-';
+        const tempDisp = '-';
+
+        const tspVal = (r.TSP !== undefined && r.TSP !== null && r.TSP !== '' && !isNaN(r.TSP)) ? Number(r.TSP).toFixed(2) : '0.00';
+        const noxVal = (r.NOX !== undefined && r.NOX !== null && r.NOX !== '' && !isNaN(r.NOX)) ? Number(r.NOX).toFixed(2) : '0.00';
+        const soxVal = (r.SOX !== undefined && r.SOX !== null && r.SOX !== '' && !isNaN(r.SOX)) ? Number(r.SOX).toFixed(2) : '0.00';
 
         tr.innerHTML = `
-            <td>${r.timestamp || ''}</td>
-            <td><strong>${r.outlet || ''}</strong></td>
-            <td>${stBadge}</td>
-            <td>${r.TSP !== undefined ? Number(r.TSP).toFixed(2) : '0.00'}</td>
-            <td>${r.NOX !== undefined ? Number(r.NOX).toFixed(2) : '0.00'}</td>
-            <td>${r.SOX !== undefined ? Number(r.SOX).toFixed(2) : '0.00'}</td>
+            <td>${ts}</td>
+            <td><strong>${out}</strong></td>
+            <td class="${statusCellClass}">${stBadge}</td>
+            <td class="${tspClass}">${tspVal}</td>
+            <td class="${noxClass}">${noxVal}</td>
+            <td class="${soxClass}">${soxVal}</td>
             <td style="color: #94a3b8;">${o2Disp}</td>
             <td style="color: #94a3b8;">${flowDisp}</td>
             <td style="color: #94a3b8;">${tempDisp}</td>
         `;
-        tbody.appendChild(tr);
+        fragment.appendChild(tr);
     });
+
+    tbody.appendChild(fragment);
 }
