@@ -424,8 +424,15 @@ function populatePlants(region, subregion) {
 // 3. Outlet Selector
 function initOutletSelector() {
     const selector = document.getElementById('outlet-select');
+    if (!selector) return;
     selector.addEventListener('change', (e) => {
-        loadAnalysisData(e.target.value);
+        const val = e.target.value;
+        if (CURRENT_ANALYSIS_DATA && CURRENT_ANALYSIS_DATA.series_5m) {
+            renderMetricCards(CURRENT_ANALYSIS_DATA.reports ? CURRENT_ANALYSIS_DATA.reports[val] : {});
+            renderIntegratedChart(CURRENT_ANALYSIS_DATA.series_5m, CURRENT_PARAM);
+            const rawOutletFilter = document.getElementById('raw-outlet-select')?.value || 'ALL';
+            renderRawDataTable(CURRENT_ANALYSIS_DATA.series_5m, CURRENT_ANALYSIS_DATA.all_alarms || [], rawOutletFilter);
+        }
     });
 }
 
@@ -538,35 +545,48 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
         } else if (rawStatus.includes('불량') || rawStatus.includes('결측')) {
             statusBadge = `<span class="badge badge-critical"><i class="fa-solid fa-bug"></i> ${rawStatus}</span>`;
             statusCellClass = 'cell-alarm-critical';
+        } else if (rawStatus.includes('점검') || rawStatus.includes('자료확인')) {
+            statusBadge = `<span class="badge badge-warning" style="background: rgba(245, 158, 11, 0.25); color: #fef08a; border: 1px solid #f59e0b;"><i class="fa-solid fa-wrench"></i> ${rawStatus}</span>`;
+            statusCellClass = 'cell-alarm-warning';
         } else if (rawStatus === '정지') {
             statusBadge = `<span class="badge badge-secondary">정지</span>`;
         }
 
-        function getCellClass(factor) {
-            const level = alarmMap[`${ts}_${out}_${factor}`] || alarmMap[`${ts}_${out}_ALL`];
-            if (level === 'CRITICAL') return 'cell-alarm-critical';
-            if (level === 'WARNING') return 'cell-alarm-warning';
-            return '';
-        }
+        function renderFactorCell(factor, rawVal, decimals = 2, isInt = false) {
+            const factorSt = String(row[`${factor}_status`] || '').trim();
+            const rowSt = String(row.status || '').trim();
+            const combined = `${rowSt} ${factorSt}`;
+            
+            let alarmCls = alarmMap[`${ts}_${out}_${factor}`] || alarmMap[`${ts}_${out}_ALL`];
+            let cellClass = alarmCls === 'CRITICAL' ? 'cell-alarm-critical' : (alarmCls === 'WARNING' ? 'cell-alarm-warning' : '');
+            
+            let maintBadge = '';
+            if (/보수/i.test(combined)) {
+                if (!cellClass) cellClass = 'cell-alarm-warning';
+                maintBadge = ` <span class="badge badge-warning" style="font-size: 0.72rem; padding: 2px 5px; margin-left: 4px; background: rgba(245, 158, 11, 0.25); color: #fef08a; border: 1px solid #f59e0b;"><i class="fa-solid fa-wrench"></i> 보수중</span>`;
+            } else if (/점검|자료확인/i.test(combined)) {
+                if (!cellClass) cellClass = 'cell-alarm-warning';
+                maintBadge = ` <span class="badge badge-warning" style="font-size: 0.72rem; padding: 2px 5px; margin-left: 4px; background: rgba(245, 158, 11, 0.25); color: #fef08a; border: 1px solid #f59e0b;"><i class="fa-solid fa-wrench"></i> 점검중</span>`;
+            }
 
-        const tspClass = getCellClass('TSP');
-        const noxClass = getCellClass('NOX');
-        const soxClass = getCellClass('SOX');
-        const o2Class = getCellClass('O2');
-        const flowClass = getCellClass('Flow');
-        const tempClass = getCellClass('Temp');
+            let numStr = (rawVal !== undefined && rawVal !== null && !isNaN(rawVal)) 
+                ? (isInt ? Math.round(Number(rawVal)).toLocaleString() : Number(rawVal).toFixed(decimals))
+                : (isInt ? '0' : '0.00');
+
+            return `<td class="${cellClass}">${numStr}${maintBadge}</td>`;
+        }
 
         tr.innerHTML = `
             <td>${ts}</td>
             <td><strong>${out}</strong></td>
             <td>${stateBadge}</td>
             <td class="${statusCellClass}">${statusBadge}</td>
-            <td class="${tspClass}">${row.TSP !== undefined ? row.TSP.toFixed(2) : '0.00'}</td>
-            <td class="${noxClass}">${row.NOX !== undefined ? row.NOX.toFixed(2) : '0.00'}</td>
-            <td class="${soxClass}">${row.SOX !== undefined ? row.SOX.toFixed(2) : '0.00'}</td>
-            <td class="${o2Class}">${row.O2 !== undefined ? row.O2.toFixed(2) : '0.00'}</td>
-            <td class="${flowClass}">${row.Flow !== undefined ? Math.round(row.Flow).toLocaleString() : '0'}</td>
-            <td class="${tempClass}">${row.Temp !== undefined ? row.Temp.toFixed(1) : '0.0'}</td>
+            ${renderFactorCell('TSP', row.TSP, 2, false)}
+            ${renderFactorCell('NOX', row.NOX, 2, false)}
+            ${renderFactorCell('SOX', row.SOX, 2, false)}
+            ${renderFactorCell('O2', row.O2, 2, false)}
+            ${renderFactorCell('Flow', row.Flow, 0, true)}
+            ${renderFactorCell('Temp', row.Temp, 1, false)}
         `;
         fragment.appendChild(tr);
     });
@@ -589,12 +609,28 @@ function initParamButtons() {
 }
 
 function renderMetricCards(report) {
-    document.getElementById('val-status').textContent = report.status || '운전 중';
-    document.getElementById('val-op-hours').textContent = `운전 ${report.operating_hours || 0}h / 정지 ${report.stop_hours || 0}h`;
+    const selectedOutlet = document.getElementById('outlet-select')?.value || 'ALL';
     
-    document.getElementById('val-tsp').textContent = report.avg_tsp !== undefined ? report.avg_tsp : '--';
-    document.getElementById('val-nox').textContent = report.avg_nox !== undefined ? report.avg_nox : '--';
-    document.getElementById('val-sox').textContent = report.avg_sox !== undefined ? report.avg_sox : '--';
+    if (selectedOutlet === 'ALL' && CURRENT_ANALYSIS_DATA && CURRENT_ANALYSIS_DATA.reports) {
+        const reps = Object.values(CURRENT_ANALYSIS_DATA.reports);
+        const tspArr = reps.map(r => r.avg_tsp).filter(v => v !== undefined && v !== null);
+        const noxArr = reps.map(r => r.avg_nox).filter(v => v !== undefined && v !== null);
+        const soxArr = reps.map(r => r.avg_sox).filter(v => v !== undefined && v !== null);
+        const mean = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : '--';
+        
+        document.getElementById('val-status').textContent = '전체 배출구 통합';
+        document.getElementById('val-op-hours').textContent = `배출구 1~5 전체 집계`;
+        document.getElementById('val-tsp').textContent = mean(tspArr);
+        document.getElementById('val-nox').textContent = mean(noxArr);
+        document.getElementById('val-sox').textContent = mean(soxArr);
+    } else {
+        report = report || {};
+        document.getElementById('val-status').textContent = report.status || '운전 중';
+        document.getElementById('val-op-hours').textContent = `운전 ${report.operating_hours || 0}h / 정지 ${report.stop_hours || 0}h`;
+        document.getElementById('val-tsp').textContent = report.avg_tsp !== undefined ? report.avg_tsp : '--';
+        document.getElementById('val-nox').textContent = report.avg_nox !== undefined ? report.avg_nox : '--';
+        document.getElementById('val-sox').textContent = report.avg_sox !== undefined ? report.avg_sox : '--';
+    }
 
     const valBox = document.getElementById('val-validation');
     const valLogs = CURRENT_ANALYSIS_DATA ? CURRENT_ANALYSIS_DATA.validation_logs : [];
@@ -622,8 +658,8 @@ function renderIntegratedChart(series5m, param) {
         "배출구 5": "#f43f5e"  // Rose
     };
 
-    const stack1Data = series5m.filter(s => s.outlet === "배출구 1");
-    const rawTimestamps = stack1Data.map(s => s.timestamp || '');
+    // 전체 고유 타임스탬프 추출 (특정 배출구 존재 여부와 상관없이 차트 X축 보장)
+    const rawTimestamps = Array.from(new Set(series5m.map(s => s.timestamp || ''))).filter(Boolean).sort();
 
     // 날짜 범위 및 멀티일자 여부 판별
     const dateSet = new Set(rawTimestamps.map(ts => ts.substring(0, 10)));
@@ -636,7 +672,6 @@ function renderIntegratedChart(series5m, param) {
     // 3일 이상 복수 날짜 조회 시: 30분 간격 리샘플링 적용 (평균값 계산)
     if (isThreeDaysOrMore) {
         chartSeriesData = [];
-        chartTimestamps = [];
 
         // 30분 단위 그룹 키 생성 (예: '2026-08-01 14:15:00' -> '2026-08-01 14:00')
         const get30mKey = (ts) => {
@@ -681,8 +716,7 @@ function renderIntegratedChart(series5m, param) {
         });
 
         chartSeriesData.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-        const stack130mData = chartSeriesData.filter(s => s.outlet === "배출구 1");
-        chartTimestamps = stack130mData.map(s => s.timestamp);
+        chartTimestamps = Array.from(new Set(chartSeriesData.map(s => s.timestamp || ''))).filter(Boolean).sort();
     }
 
     // X축 라벨 포맷팅: 단일일자인 경우 HH:mm, 다중일자인 경우 MM/DD HH:mm
@@ -711,8 +745,11 @@ function renderIntegratedChart(series5m, param) {
 
     if (selectedOutlet === 'ALL') {
         datasets = outlets.map(out => {
-            const outData = chartSeriesData.filter(s => s.outlet === out);
-            const values = outData.map(s => s[param] !== undefined ? s[param] : 0);
+            const outDataMap = {};
+            chartSeriesData.filter(s => s.outlet === out).forEach(s => {
+                outDataMap[s.timestamp] = s[param];
+            });
+            const values = chartTimestamps.map(ts => (outDataMap[ts] !== undefined && outDataMap[ts] !== null) ? outDataMap[ts] : null);
 
             return {
                 label: out,
@@ -726,7 +763,11 @@ function renderIntegratedChart(series5m, param) {
             };
         });
     } else {
-        const outData = chartSeriesData.filter(s => s.outlet === selectedOutlet);
+        const outDataMap = {};
+        chartSeriesData.filter(s => s.outlet === selectedOutlet).forEach(s => {
+            outDataMap[s.timestamp] = s;
+        });
+
         const factors = [
             { key: "TSP", label: `${selectedOutlet} TSP (mg/m³)`, color: "#ef4444" },
             { key: "NOX", label: `${selectedOutlet} NOX (ppm)`, color: "#0ea5e9" },
@@ -734,7 +775,10 @@ function renderIntegratedChart(series5m, param) {
         ];
 
         datasets = factors.map(f => {
-            const values = outData.map(s => s[f.key] !== undefined ? s[f.key] : 0);
+            const values = chartTimestamps.map(ts => {
+                const row = outDataMap[ts];
+                return (row && row[f.key] !== undefined && row[f.key] !== null) ? row[f.key] : null;
+            });
             return {
                 label: f.label,
                 data: values,

@@ -280,19 +280,23 @@ async def upload_file(file: UploadFile = File(...)):
                 return s
             df["outlet"] = df["outlet"].apply(norm_out)
 
-        # 계측기 상태 컬럼: J열(TSP), Q열(NOX), X열(SOX), AE열(O2), AL열(Flow), AS열(Temp) 종합 탐색
+        # 계측기 상태 컬럼: J열(TSP), Q열(NOX), X열(SOX), AE열(O2), AL열(Flow), AS열(Temp) 종합 및 인자별 개별 추출
+        factor_status_lists = {f: [] for f in EXCEL_ABS_STATUS_COLUMNS.keys()}
         statuses = []
         for idx, row in df.iterrows():
             st_found = None
-            # 1. J(9), Q(16), X(23), AE(30), AL(37), AS(44) 컬럼 위치의 측정기 상태 확인
+            # 1. J(9), Q(16), X(23), AE(30), AL(37), AS(44) 컬럼 위치의 인자별 측정기 상태 개별 기록
             for factor, s_idx in EXCEL_ABS_STATUS_COLUMNS.items():
+                f_st = ""
                 if s_idx < len(row):
                     v_str = str(row.iloc[s_idx] if hasattr(row, 'iloc') else list(row.values)[s_idx]).strip()
-                    if any(k in v_str for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
-                        st_found = v_str
-                        break
+                    if v_str and v_str.lower() not in ["nan", "none", "0", "0.0", ""]:
+                        f_st = v_str
+                factor_status_lists[factor].append(f_st)
+                if not st_found and any(k in f_st for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
+                    st_found = f_st
             
-            # 2. 행 전체에서 보수중/점검/가동중지 텍스트 탐색
+            # 2. 행 전체에서 보수중/점검/가동중지 텍스트 추가 탐색
             if not st_found:
                 for col_name, val in row.items():
                     val_str = str(val).strip()
@@ -308,6 +312,8 @@ async def upload_file(file: UploadFile = File(...)):
                 statuses.append("정상")
 
         df["status"] = statuses
+        for factor, st_list in factor_status_lists.items():
+            df[f"{factor}_status"] = st_list
 
         for factor in config.FACTORS:
             if factor in df.columns:
