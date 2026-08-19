@@ -1339,14 +1339,21 @@ function renderAutoRawDataTable(series) {
     targetList.forEach(r => {
         const tr = document.createElement('tr');
         const st = r.status || '정상';
+        
         let stBadge = `<span class="badge badge-success">정상</span>`;
-        if (st.includes('보수')) stBadge = `<span class="badge badge-warning">보수</span>`;
-        if (st === '정지') stBadge = `<span class="badge badge-secondary">정지</span>`;
+        if (/가동중지|가동 중지|미운전|정지/i.test(st)) {
+            stBadge = `<span class="badge badge-secondary">${st}</span>`;
+        } else if (/점검|자료확인|보수|불량/i.test(st)) {
+            stBadge = `<span class="badge badge-warning">${st}</span>`;
+        } else if (st !== '정상' && st !== '') {
+            // 기타 상태 (자료확인중 등)
+            stBadge = `<span class="badge badge-info">${st}</span>`;
+        }
 
-        // CleanSYS Open API 명세상 산소/유량/온도는 미제공되므로 '-' 표기
-        const o2Disp = (r.O2 === undefined || r.O2 === 20.5 || r.O2 === 13.8) ? '-' : Number(r.O2).toFixed(1);
-        const flowDisp = (r.Flow === undefined || r.Flow === 0.0 || r.Flow === 28000.0) ? '-' : Math.round(Number(r.Flow)).toLocaleString();
-        const tempDisp = (r.Temp === undefined || r.Temp === 42.0 || r.Temp === 155.0) ? '-' : Number(r.Temp).toFixed(1);
+        // CleanSYS Open API 명세상 산소/유량/온도는 미제공되므로 '-' 표기 (값이 0일때도 - 표기)
+        const o2Disp = (!r.O2 || r.O2 === 0 || r.O2 === '0.0' || r.O2 === 20.5 || r.O2 === 13.8) ? '-' : Number(r.O2).toFixed(1);
+        const flowDisp = (!r.Flow || r.Flow === 0 || r.Flow === '0.0' || r.Flow === 28000.0) ? '-' : Math.round(Number(r.Flow)).toLocaleString();
+        const tempDisp = (!r.Temp || r.Temp === 0 || r.Temp === '0.0' || r.Temp === 42.0 || r.Temp === 155.0) ? '-' : Number(r.Temp).toFixed(1);
 
         tr.innerHTML = `
             <td>${r.timestamp || ''}</td>
