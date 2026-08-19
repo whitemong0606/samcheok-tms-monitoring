@@ -75,10 +75,22 @@ class StackAnalyzer:
             temp = row.get("Temp", np.nan)
             flow = row.get("Flow", np.nan)
             
+            def safe_f(v):
+                if pd.isna(v) or v == "":
+                    return None
+                try:
+                    return float(v)
+                except (ValueError, TypeError):
+                    return None
+            
+            o2_f   = safe_f(o2)
+            temp_f = safe_f(temp)
+            flow_f = safe_f(flow)
+            
             # O2/Temp/Flow 모두 없거나 0이면 (API 미제공) → status='정상'이면 OPERATING
-            has_o2   = pd.notna(o2)   and float(o2)   > 0
-            has_temp = pd.notna(temp) and float(temp) > 0
-            has_flow = pd.notna(flow) and float(flow) > 0
+            has_o2   = o2_f is not None and o2_f > 0
+            has_temp = temp_f is not None and temp_f > 0
+            has_flow = flow_f is not None and flow_f > 0
             
             if not has_o2 and not has_temp and not has_flow:
                 # API 데이터 정상 수치 수신 → 운전 중
@@ -86,10 +98,6 @@ class StackAnalyzer:
                 continue
             
             # O2/Temp/Flow 실측값 기반 판별 (수동 업로드)
-            o2_f   = float(o2)   if has_o2   else None
-            temp_f = float(temp) if has_temp else None
-            flow_f = float(flow) if has_flow else None
-            
             is_stop = False
             is_op   = False
             
