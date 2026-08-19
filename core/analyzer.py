@@ -29,17 +29,16 @@ class StackAnalyzer:
 
     def classify_operating_state(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        보일러 연소 가스 배출구 특성 반영 운전/정지 판별 logic.
-        - O2 >= 19.5% 이거나 Temp < 70, Flow < 1000 -> '정지 (STOP)'
-        - O2 <= 16.0% 이고 Temp/Flow 상승 -> '운전 (OPERATING)'
+        운전/정지 판별:
+        [API 자동수집 데이터] status 컬럼에 CleanSYS 원문 상태 → 직접 분류
+        [수동 업로드 데이터]  O2/Temp/Flow 실측값 → 임계치 기반 분류
         """
         df = df.copy()
         if df.empty:
             df["State"] = []
             return df
 
-        # '상태/state' 컬럼 외 API 저장 'status' 컬럼도 우선 참조
-        # CleanSYS API 가 저장한 실제 상태: '가동중지', '자료확인중(점검)', '정상' 등
+        # status/state/상태/구분 컬럼 탐색 (API 저장값 우선)
         existing_state_col = next(
             (c for c in df.columns if str(c).lower() in ["status", "state", "상태", "운전상태", "구분"]),
             None
@@ -51,46 +50,68 @@ class StackAnalyzer:
             if existing_state_col and pd.notna(row.get(existing_state_col)):
                 raw_st = str(row.get(existing_state_col)).strip()
             
-            # API 상태 우선 분류 (가동중지, 점검, 자료확인중 등 직접 문자열 포함)
-            if raw_st:
+            # ── [경로 A] status 컬럼이 실제 상태 문자열인 경우 (API 수집 데이터) ──
+            if raw_st and raw_st not in ["정상", "0", "0.0", ""]:
+                # 가동중지 / 정지 계열
                 if any(k in raw_st for k in ["가동중지", "가동 중지", "미운전", "정지", "STOP", "stop"]):
                     states.append("STOP")
                     continue
-                elif any(k in raw_st for k in ["점검", "자료확인", "보수", "불량"]):
+                # 점검 / 자료확인 / 보수 계열
+                elif any(k in raw_st for k in ["점검", "자료확인", "보수", "불량", "자료 확인"]):
                     states.append("MAINTENANCE")
                     continue
-                elif any(k in raw_st for k in ["정상", "운전", "OPERATING", "operating", "가동"]):
+                # 명시적 운전 확인
+                elif any(k in raw_st for k in ["운전", "OPERATING", "operating", "가동"]):
                     states.append("OPERATING")
                     continue
-                # '미측정' 또는 빈값이 아닌 미분류 문자열은 MAINTENANCE로 처리
-                elif raw_st not in ["", "정상", "0", "0.0"]:
+                # 미분류 비표준 문자열 → 점검으로 처리
+                else:
                     states.append("MAINTENANCE")
                     continue
-
-            o2 = row.get("O2", np.nan)
+            
+            # ── [경로 B] status='정상' 또는 없는 경우 → O2/Temp/Flow 기반 판별 ──
+            # (수동 엑셀 업로드 데이터, 또는 API 정상 수치 데이터)
+            o2   = row.get("O2", np.nan)
             temp = row.get("Temp", np.nan)
             flow = row.get("Flow", np.nan)
             
-            if pd.isna(o2) or o2 == 0:
-                states.append("UNKNOWN")
+            # O2/Temp/Flow 모두 없거나 0이면 (API 미제공) → status='정상'이면 OPERATING
+            has_o2   = pd.notna(o2)   and float(o2)   > 0
+            has_temp = pd.notna(temp) and float(temp) > 0
+            has_flow = pd.notna(flow) and float(flow) > 0
+            
+            if not has_o2 and not has_temp and not has_flow:
+                # API 데이터 정상 수치 수신 → 운전 중
+                states.append("OPERATING" if raw_st == "정상" else "UNKNOWN")
                 continue
-                
-            # O2 기반 정지/운전 판별 (API에서 O2 값 없는 경우 기본 OPERATING)
-            is_stop = (o2 >= config.STOP_O2_THRESHOLD) or (
-                (pd.notna(temp) and temp < config.STOP_TEMP_THRESHOLD) and 
-                (pd.notna(flow) and flow < config.STOP_FLOW_THRESHOLD)
-            )
-            is_op = (o2 <= config.OPERATING_O2_THRESHOLD) or (
-                (pd.notna(flow) and flow >= config.STOP_FLOW_THRESHOLD) and
-                (pd.notna(temp) and temp >= config.STOP_TEMP_THRESHOLD)
-            )
+            
+            # O2/Temp/Flow 실측값 기반 판별 (수동 업로드)
+            o2_f   = float(o2)   if has_o2   else None
+            temp_f = float(temp) if has_temp else None
+            flow_f = float(flow) if has_flow else None
+            
+            is_stop = False
+            is_op   = False
+            
+            if o2_f is not None:
+                if o2_f >= config.STOP_O2_THRESHOLD:      # O2 >= 19.5% → 정지
+                    is_stop = True
+                elif o2_f <= config.OPERATING_O2_THRESHOLD:  # O2 <= 16% → 운전
+                    is_op = True
+            
+            if temp_f is not None and flow_f is not None:
+                if temp_f < config.STOP_TEMP_THRESHOLD and flow_f < config.STOP_FLOW_THRESHOLD:
+                    is_stop = True
+                elif temp_f >= config.STOP_TEMP_THRESHOLD and flow_f >= config.STOP_FLOW_THRESHOLD:
+                    is_op = True
             
             if is_stop and not is_op:
                 states.append("STOP")
             elif is_op:
                 states.append("OPERATING")
             else:
-                states.append("STOP" if o2 > 18.0 else "OPERATING")
+                # O2 단독 판단
+                states.append("STOP" if (o2_f is not None and o2_f > 18.0) else "OPERATING")
                     
         df["State"] = states
         return df
@@ -226,11 +247,18 @@ class StackAnalyzer:
         stop_df = df[state_series == "STOP"]
         for idx in stop_df.index:
             row = df.loc[idx]
-            temp = float(row.get("Temp", 0.0))
-            flow = float(row.get("Flow", 0.0))
-            nox = float(row.get("NOX", 0.0))
-            sox = float(row.get("SOX", 0.0))
-            tsp = float(row.get("TSP", 0.0))
+            # API 데이터에서 O2/Flow/Temp가 None일 수 있으므로 안전 변환
+            def safe_f(v, default=0.0):
+                try:
+                    return float(v) if v is not None and v != "" else default
+                except (TypeError, ValueError):
+                    return default
+            temp = safe_f(row.get("Temp"))
+            flow = safe_f(row.get("Flow"))
+            nox  = safe_f(row.get("NOX"))
+            sox  = safe_f(row.get("SOX"))
+            tsp  = safe_f(row.get("TSP"))
+
             
             abnormal_factors = []
             if temp > 80.0 and flow > 1000.0:

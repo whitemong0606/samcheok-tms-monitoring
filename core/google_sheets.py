@@ -218,19 +218,28 @@ class GoogleSheetsStorage:
                     for r in records:
                         key = f"{r.get('timestamp')}_{r.get('outlet')}"
                         if key not in existing_keys:
+                            # O2/Flow/Temp: API 미제공 시 None → 빈 문자열로 저장
+                            def safe_float(val):
+                                if val is None or val == "" or (isinstance(val, float) and pd.isna(val)):
+                                    return ""
+                                try:
+                                    return float(val)
+                                except (ValueError, TypeError):
+                                    return ""
                             rows_to_insert.append([
                                 str(r.get("timestamp", "")),
                                 str(r.get("outlet", "")),
                                 str(r.get("fact_manage_nm", "한국남부발전(주) 삼척빛드림본부")),
                                 str(r.get("area_nm", "강원도 삼척시")),
                                 str(r.get("status", "정상")),
-                                float(r.get("TSP", 0.0)),
-                                float(r.get("NOX", 0.0)),
-                                float(r.get("SOX", 0.0)),
-                                float(r.get("O2", 0.0)),
-                                float(r.get("Flow", 0.0)),
-                                float(r.get("Temp", 0.0))
+                                float(r.get("TSP", 0.0) or 0.0),
+                                float(r.get("NOX", 0.0) or 0.0),
+                                float(r.get("SOX", 0.0) or 0.0),
+                                safe_float(r.get("O2")),    # API 미제공 → 빈칸
+                                safe_float(r.get("Flow")),  # API 미제공 → 빈칸
+                                safe_float(r.get("Temp")),  # API 미제공 → 빈칸
                             ])
+
 
                     if rows_to_insert:
                         worksheet.append_rows(rows_to_insert)

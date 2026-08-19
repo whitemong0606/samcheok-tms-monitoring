@@ -1124,38 +1124,55 @@ async function loadAutoAnalysisData() {
                 updatedElem.textContent = `마지막 30분 수집 시각: ${lastTs}`;
             }
 
-            // === [수정] 운전 상태 카드: 선택 배출구별/전체별 상태 동적 표시 ===
+            // === 운전 상태 카드: series_30m의 배출구별 최신 status를 실시간 기준으로 사용 ===
             const allOutlets = ['배출구 1', '배출구 2', '배출구 3', '배출구 4', '배출구 5'];
             const statusEl = document.getElementById('auto-val-status');
             const hoursEl = document.getElementById('auto-val-op-hours');
+            const series30m = data.series_30m || [];
 
+            // 배출구별 가장 최신 row의 status를 추출 (CleanSYS 원문 상태)
+            const latestStatusByOutlet = {};
+            allOutlets.forEach(out => {
+                const outRows = series30m.filter(s => s.outlet === out);
+                if (outRows.length > 0) {
+                    // timestamp 기준 최신 row
+                    const latestRow = outRows.reduce((a, b) => a.timestamp > b.timestamp ? a : b);
+                    latestStatusByOutlet[out] = latestRow.status || '';
+                }
+            });
 
-            const statusIcon = (st) => {
-                if (!st) return '🟢 정상 운전 중';
-                if (st.includes('점검') || st.includes('자료 확인')) return `🟡 ${st}`;
-                if (st.includes('정지') || st.includes('가동 정지')) return `🔴 ${st}`;
-                return `🟢 ${st}`;
+            // 상태 아이콘/색상 결정 (CleanSYS 원문 상태 문자열 기준)
+            const statusIcon = (rawStatus) => {
+                const st = rawStatus || '';
+                if (!st || st === '정상') return { icon: '🟢', label: '정상 운전 중', cls: 'status-ok' };
+                if (/가동중지|가동 중지|미운전|정지/i.test(st)) return { icon: '🔴', label: st, cls: 'status-stop' };
+                if (/점검|자료확인|보수|불량/i.test(st)) return { icon: '🟡', label: st, cls: 'status-maint' };
+                return { icon: '🟢', label: st, cls: 'status-ok' };
             };
 
             if (selectedOutlet === 'ALL') {
-                // 전체 보기: 각 배출구의 상태를 모두 나열
+                // 전체 보기: 각 배출구의 현재 실시간 상태 나열
                 const statusLines = allOutlets.map(out => {
-                    const r = data.reports[out];
-                    const st = r ? (r.status || '정상 운전 중') : '데이터 없음';
-                    return statusIcon(st).replace('🟢 ', '').replace('🟡 ', '').replace('🔴 ', '') === st
-                        ? `${out}: 🟢 ${st}`
-                        : `${out}: ${statusIcon(st)}`;
+                    const rawSt = latestStatusByOutlet[out];
+                    if (rawSt === undefined) return `${out}: ❓ 데이터 없음`;
+                    const { icon, label } = statusIcon(rawSt);
+                    return `${out}: ${icon} ${label}`;
                 });
-                statusEl.innerHTML = statusLines.map(l => `<span style="display:block;font-size:0.82rem;line-height:1.7;">${l}</span>`).join('');
+                statusEl.innerHTML = statusLines.map(l =>
+                    `<span style="display:block;font-size:0.82rem;line-height:1.8;">${l}</span>`
+                ).join('');
                 statusEl.style.fontSize = '0.82rem';
-                if (hoursEl) hoursEl.textContent = '전체 5개 배출구 상태';
+                if (hoursEl) hoursEl.textContent = '전체 5개 배출구 실시간 상태';
             } else {
+                const rawSt = latestStatusByOutlet[selectedOutlet];
+                const { icon, label } = statusIcon(rawSt);
+                statusEl.textContent = `${icon} ${label}`;
+                statusEl.style.fontSize = '';
                 const rep = data.reports[selectedOutlet];
+                if (rep && hoursEl) {
+                    hoursEl.textContent = `운전 ${rep.operating_hours || 0}h / 정지 ${rep.stop_hours || 0}h`;
+                }
                 if (rep) {
-                    statusEl.textContent = statusIcon(rep.status || '정상 운전 중');
-                    statusEl.style.fontSize = '';
-                    if (hoursEl) hoursEl.textContent = `운전 ${rep.operating_hours || 0}h / 정지 ${rep.stop_hours || 0}h`;
-
                     document.getElementById('auto-val-tsp').textContent = rep.avg_tsp !== undefined ? rep.avg_tsp.toFixed(2) : '--';
                     document.getElementById('auto-val-nox').textContent = rep.avg_nox !== undefined ? rep.avg_nox.toFixed(2) : '--';
                     document.getElementById('auto-val-sox').textContent = rep.avg_sox !== undefined ? rep.avg_sox.toFixed(2) : '--';
@@ -1163,7 +1180,7 @@ async function loadAutoAnalysisData() {
             }
 
             if (selectedOutlet === 'ALL' && data.reports) {
-                // 전체 보기 시 TSP/NOX/SOX 카드: 전체 배출구 평균
+                // 전체 보기 시 TSP/NOX/SOX 카드: 운전 중인 배출구 평균
                 let tspVals = [], noxVals = [], soxVals = [];
                 allOutlets.forEach(out => {
                     const r = data.reports[out];
@@ -1173,7 +1190,7 @@ async function loadAutoAnalysisData() {
                         if (r.avg_sox) soxVals.push(r.avg_sox);
                     }
                 });
-                const avg = arr => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length).toFixed(2) : '--';
+                const avg = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : '--';
                 document.getElementById('auto-val-tsp').textContent = avg(tspVals);
                 document.getElementById('auto-val-nox').textContent = avg(noxVals);
                 document.getElementById('auto-val-sox').textContent = avg(soxVals);

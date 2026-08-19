@@ -522,7 +522,12 @@ def get_auto_analysis_data(
         "outlets": outlets,
         "reports": reports,
         "all_alarms": all_alarms,
-        "series_30m": df_30m.fillna(0).to_dict(orient="records") if not df_30m.empty else []
+        "series_30m": (
+            df_30m.assign(
+                status=df_30m["status"].fillna("") if "status" in df_30m.columns else ""
+            ).fillna(0).to_dict(orient="records")
+            if not df_30m.empty else []
+        )
     }
 
 @app.get("/api/cron/daily-report")

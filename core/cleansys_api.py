@@ -116,11 +116,12 @@ class CleanSysAPIClient:
             nox_v, nox_st = parse_val(item.get("nox_mesure_value"))
             sox_v, sox_st = parse_val(item.get("sox_mesure_value"))
 
-            # 계측기 종합 상태 판별
-            if "정지" in (tsp_st + nox_st + sox_st):
-                status_str = "정지"
-            elif any(s not in ["정상", "미측정"] for s in [tsp_st, nox_st, sox_st]):
-                status_str = next(s for s in [tsp_st, nox_st, sox_st] if s not in ["정상", "미측정"])
+            # 각 찡정값에서 실제 상태 문자열 수집 (자료확인중(점검), 가동중지 등)
+            # 우선순위: TSP → NOX → SOX 순으로 상태 문자열 확인
+            status_candidates = [s for s in [tsp_st, nox_st, sox_st] if s not in ["정상", "미측정", "0"]]
+            if status_candidates:
+                # 원문 그대로 보존 (가동중지, 자료확인중(점검) 등)
+                status_str = status_candidates[0]
             else:
                 status_str = "정상"
 
@@ -131,13 +132,15 @@ class CleanSysAPIClient:
                 "outlet": outlet_id,
                 "fact_manage_nm": str(item.get("fact_manage_nm", fact_manage_nm)),
                 "area_nm": str(item.get("area_nm", area_nm)),
-                "status": status_str,
+                "status": status_str,   # CleanSYS 원문 상태 문자열 보존
                 "TSP": tsp_v,
                 "NOX": nox_v,
                 "SOX": sox_v,
-                "O2": 20.5 if status_str == "정지" else 13.8,
-                "Flow": 0.0 if status_str == "정지" else 28000.0,
-                "Temp": 42.0 if status_str == "정지" else 155.0,
+                # CleanSYS Open API 미제공 항목: O2, Flow, Temp 없음
+                # 임의값 삽입으로 인한 오류 알람 방지를 위해 None 처리
+                "O2": None,
+                "Flow": None,
+                "Temp": None,
                 "TSP_LIMIT": float(item.get("tsp_exhst_perm_stdr_value") or 15.0),
                 "NOX_LIMIT": float(item.get("nox_exhst_perm_stdr_value") or 50.0),
                 "SOX_LIMIT": float(item.get("sox_exhst_perm_stdr_value") or 40.0)
