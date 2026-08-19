@@ -124,15 +124,22 @@ async def upload_file(file: UploadFile = File(...)):
         time_cols_indices = []
         header_row_idx = None
 
-        # === 원본 엑셀 절대 열 기준: G(6),N(13),U(20),AB(27),AI(34),AP(41) 컬럼명 미리 기록 ===
-        # 헤더 행을 나중에 찾더라도 절대 열의 실제 헤더 텍스트를 보존
+        # === 원본 엑셀 절대 열 기준: G(6),N(13),U(20),AB(27),AI(34),AP(41) 수치 열 및 J(9),Q(16),X(23),AE(30),AL(37),AS(44) 측정기 상태 열 ===
         EXCEL_ABS_COL_FACTORS = {
-            "TSP":  6,   # G
-            "NOX":  13,  # N
-            "SOX":  20,  # U
-            "O2":   27,  # AB
-            "Flow": 34,  # AI
-            "Temp": 41,  # AP
+            "TSP":  6,   # G열 (보정후먼지)
+            "NOX":  13,  # N열 (보정후질소)
+            "SOX":  20,  # U열 (보정후황산)
+            "O2":   27,  # AB열 (보정후산소)
+            "Flow": 34,  # AI열 (보정후유량)
+            "Temp": 41,  # AP열 (보정후온도)
+        }
+        EXCEL_ABS_STATUS_COLUMNS = {
+            "TSP":  9,   # J열 (TSP측정기상태)
+            "NOX":  16,  # Q열 (NOX측정기상태)
+            "SOX":  23,  # X열 (SOX측정기상태)
+            "O2":   30,  # AE열 (O2측정기상태)
+            "Flow": 37,  # AL열 (Flow측정기상태)
+            "Temp": 44,  # AS열 (Temp측정기상태)
         }
         # 헤더 행 스캔 전, 각 절대 열 위치의 실제 컬럼 헤더 텍스트를 저장
         abs_col_header_texts = {}  # factor -> (abs_col_idx, header_text_in_that_col)
@@ -273,16 +280,25 @@ async def upload_file(file: UploadFile = File(...)):
                 return s
             df["outlet"] = df["outlet"].apply(norm_out)
 
-        # 계측기 상태 컬럼(AL열 등) 종합 탐색 및 row별 상태 문구 추출
+        # 계측기 상태 컬럼: J열(TSP), Q열(NOX), X열(SOX), AE열(O2), AL열(Flow), AS열(Temp) 종합 탐색
         statuses = []
         for idx, row in df.iterrows():
             st_found = None
-            # 1. 엑셀 행 내 모든 셀을 전수 조사하여 보수중, 보수, 점검, 자료확인중, 가동중지 탐색 (Column AL 등)
-            for col_name, val in row.items():
-                val_str = str(val).strip()
-                if any(k in val_str for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
-                    st_found = val_str
-                    break
+            # 1. J(9), Q(16), X(23), AE(30), AL(37), AS(44) 컬럼 위치의 측정기 상태 확인
+            for factor, s_idx in EXCEL_ABS_STATUS_COLUMNS.items():
+                if s_idx < len(row):
+                    v_str = str(row.iloc[s_idx] if hasattr(row, 'iloc') else list(row.values)[s_idx]).strip()
+                    if any(k in v_str for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
+                        st_found = v_str
+                        break
+            
+            # 2. 행 전체에서 보수중/점검/가동중지 텍스트 탐색
+            if not st_found:
+                for col_name, val in row.items():
+                    val_str = str(val).strip()
+                    if any(k in val_str for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
+                        st_found = val_str
+                        break
             
             if st_found:
                 statuses.append(st_found)
