@@ -280,32 +280,49 @@ async def upload_file(file: UploadFile = File(...)):
                 return s
             df["outlet"] = df["outlet"].apply(norm_out)
 
-        # 계측기 상태 컬럼: J열(TSP), Q열(NOX), X열(SOX), AE열(O2), AL열(Flow), AS열(Temp) 종합 및 인자별 개별 추출
+        # 계측기 상태 컬럼: J열(TSP), Q열(NOX), X열(SOX), AE열(O2), AL열(Flow), AS열(Temp) 동적 탐색 및 인자별 독립 기록
+        factor_kw_map = {
+            "TSP": ["먼지", "tsp"],
+            "NOX": ["질소", "nox"],
+            "SOX": ["황산", "sox"],
+            "O2":  ["산소", "o2"],
+            "Flow": ["유량", "flow"],
+            "Temp": ["온도", "temp"]
+        }
+
         factor_status_lists = {f: [] for f in EXCEL_ABS_STATUS_COLUMNS.keys()}
         statuses = []
         for idx, row in df.iterrows():
-            st_found = None
-            # 1. J(9), Q(16), X(23), AE(30), AL(37), AS(44) 컬럼 위치의 인자별 측정기 상태 개별 기록
+            row_st_map = {}
+            row_has_maint = False
+
             for factor, s_idx in EXCEL_ABS_STATUS_COLUMNS.items():
-                f_st = ""
-                if s_idx < len(row):
+                f_st = "정상"
+                # 1. 컬럼명 헤더 탐색 (e.g. '유량측정기상태', '먼지측정기상태')
+                matched_col_val = None
+                kws = factor_kw_map.get(factor, [])
+                for col_name in row.index:
+                    c_str = str(col_name).strip().lower()
+                    if any(k in c_str for k in kws) and any(sk in c_str for sk in ["상태", "state", "status", "구분"]):
+                        v = str(row[col_name]).strip()
+                        if v and v.lower() not in ["nan", "none", ""]:
+                            matched_col_val = v
+                            break
+
+                if matched_col_val:
+                    f_st = matched_col_val
+                elif s_idx < len(row):
                     v_str = str(row.iloc[s_idx] if hasattr(row, 'iloc') else list(row.values)[s_idx]).strip()
-                    if v_str and v_str.lower() not in ["nan", "none", "0", "0.0", ""]:
+                    if v_str and v_str.lower() not in ["nan", "none", ""]:
                         f_st = v_str
+
                 factor_status_lists[factor].append(f_st)
-                if not st_found and any(k in f_st for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
-                    st_found = f_st
-            
-            # 2. 행 전체에서 보수중/점검/가동중지 텍스트 추가 탐색
-            if not st_found:
-                for col_name, val in row.items():
-                    val_str = str(val).strip()
-                    if any(k in val_str for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
-                        st_found = val_str
-                        break
-            
-            if st_found:
-                statuses.append(st_found)
+                row_st_map[factor] = f_st
+                if any(k in f_st for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
+                    row_has_maint = True
+
+            if row_has_maint:
+                statuses.append("보수/점검")
             elif "status" in df.columns and pd.notna(row.get("status")):
                 statuses.append(str(row.get("status")).strip())
             else:

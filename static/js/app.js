@@ -554,17 +554,15 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
 
         function renderFactorCell(factor, rawVal, decimals = 2, isInt = false) {
             const factorSt = String(row[`${factor}_status`] || '').trim();
-            const rowSt = String(row.status || '').trim();
-            const combined = `${rowSt} ${factorSt}`;
             
             let alarmCls = alarmMap[`${ts}_${out}_${factor}`] || alarmMap[`${ts}_${out}_ALL`];
             let cellClass = alarmCls === 'CRITICAL' ? 'cell-alarm-critical' : (alarmCls === 'WARNING' ? 'cell-alarm-warning' : '');
             
             let maintBadge = '';
-            if (/보수/i.test(combined)) {
+            if (/보수/i.test(factorSt)) {
                 if (!cellClass) cellClass = 'cell-alarm-warning';
                 maintBadge = ` <span class="badge badge-warning" style="font-size: 0.72rem; padding: 2px 5px; margin-left: 4px; background: rgba(245, 158, 11, 0.25); color: #fef08a; border: 1px solid #f59e0b;"><i class="fa-solid fa-wrench"></i> 보수중</span>`;
-            } else if (/점검|자료확인/i.test(combined)) {
+            } else if (/점검|자료확인/i.test(factorSt)) {
                 if (!cellClass) cellClass = 'cell-alarm-warning';
                 maintBadge = ` <span class="badge badge-warning" style="font-size: 0.72rem; padding: 2px 5px; margin-left: 4px; background: rgba(245, 158, 11, 0.25); color: #fef08a; border: 1px solid #f59e0b;"><i class="fa-solid fa-wrench"></i> 점검중</span>`;
             }
@@ -580,7 +578,6 @@ function renderRawDataTable(series5m, alarms, filterOutlet) {
             <td>${ts}</td>
             <td><strong>${out}</strong></td>
             <td>${stateBadge}</td>
-            <td class="${statusCellClass}">${statusBadge}</td>
             ${renderFactorCell('TSP', row.TSP, 2, false)}
             ${renderFactorCell('NOX', row.NOX, 2, false)}
             ${renderFactorCell('SOX', row.SOX, 2, false)}
@@ -1447,7 +1444,6 @@ function renderAutoRawDataTable(series, alarms) {
         tr.innerHTML = `
             <td>${ts}</td>
             <td><strong>${out}</strong></td>
-            <td class="${statusCellClass}">${stBadge}</td>
             <td class="${tspClass}">${tspVal}</td>
             <td class="${noxClass}">${noxVal}</td>
             <td class="${soxClass}">${soxVal}</td>
