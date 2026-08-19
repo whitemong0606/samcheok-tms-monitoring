@@ -30,15 +30,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.middleware("http")
-async def add_no_cache_header(request, call_next):
-    response = await call_next(request)
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
-
-
 # Static Files 디렉토리 설정
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.exists(static_dir):
@@ -567,19 +558,27 @@ def get_auto_analysis_data(
             "all_alarms": all_alarms,
             "series_30m": series_data
         }
-        return JSONResponse(status_code=200, content=sanitize_for_json(payload))
+        return JSONResponse(
+            status_code=200,
+            content=sanitize_for_json(payload),
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
     except Exception as e:
         import traceback
         err_msg = f"자동 분석 데이터 조회 중 예외: {str(e)}"
         print(f"[get_auto_analysis_data] {err_msg}\n{traceback.format_exc()}")
-        return JSONResponse(status_code=200, content={
-            "success": False,
-            "message": err_msg,
-            "outlets": ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"],
-            "reports": {},
-            "all_alarms": [],
-            "series_30m": []
-        })
+        return JSONResponse(
+            status_code=200,
+            content={
+                "success": False,
+                "message": err_msg,
+                "outlets": ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"],
+                "reports": {},
+                "all_alarms": [],
+                "series_30m": []
+            },
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
+        )
 
 @app.get("/api/cron/daily-report")
 def cron_daily_report():
