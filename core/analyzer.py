@@ -162,7 +162,9 @@ class StackAnalyzer:
             if factor not in df.columns:
                 continue
                 
-            series = df[factor].astype(float)
+            # 문자열 찌꺼기(가동중지 등)가 혼입되어도 안전하게 숫자 변환 (비숫자는 NaN 처리)
+            series = pd.to_numeric(df[factor], errors="coerce")
+
             
             # 2. 기준치 초과 알람 (Threshold Exceeded)
             limit = self.limits.get(factor)
@@ -239,8 +241,9 @@ class StackAnalyzer:
             
             if factor in ["SOX", "NOX"]:
                 op_df = df[state_series == "OPERATING"]
-                if len(op_df) >= 20:
-                    zero_ratio = (op_df[factor] == 0.0).mean()
+                if len(op_df) >= 20 and factor in op_df.columns:
+                    num_op = pd.to_numeric(op_df[factor], errors="coerce")
+                    zero_ratio = (num_op == 0.0).mean()
                     if zero_ratio >= 0.95:
                         alarms.append(AlarmEvent(
                             timestamp=str(df["timestamp"].iloc[-1]),
@@ -323,8 +326,12 @@ class StackAnalyzer:
         # 운전 중 평균만 필터링 산출
         averages = {}
         for factor in config.FACTORS:
-            if not op_df.empty and factor in op_df.columns and pd.notna(op_df[factor]).any():
-                averages[factor] = round(float(op_df[factor].mean()), 2)
+            if not op_df.empty and factor in op_df.columns:
+                num_series = pd.to_numeric(op_df[factor], errors="coerce").dropna()
+                if not num_series.empty:
+                    averages[factor] = round(float(num_series.mean()), 2)
+                else:
+                    averages[factor] = 0.00
             else:
                 averages[factor] = 0.00
 
