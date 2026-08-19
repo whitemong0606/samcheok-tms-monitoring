@@ -345,23 +345,49 @@ def get_analysis_data(
 ):
     """
     [날짜 범위 지정 다중일시 데이터 조회 API]
-    start_date ~ end_date 범위 내 데이터 구글 시트 및 API 멀티 타겟 조회
     """
-    global UPLOADED_DATA
-    today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-    
-    start_dt_str = start_date or today_str
-    end_dt_str = end_date or today_str
+    try:
+        today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        start_dt_str = start_date or today_str
+        end_dt_str = end_date or today_str
 
-    return {
-        "success": True,
-        "source": data_source,
-        "period": f"{start_dt_str} ~ {end_dt_str}",
-        "outlets": outlets,
-        "reports": reports,
-        "all_alarms": all_alarms,
-        "series_5m": df_5m.fillna(0).to_dict(orient="records")
-    }
+        plant_name = "한국남부발전(주) 삼척빛드림본부"
+        region_name = "강원도 삼척시"
+
+        df_5m, data_source = process_date_range_telemetry(start_dt_str, end_dt_str, plant_name, region_name, is_samcheok=True)
+        outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+        reports = {}
+        all_alarms = []
+
+        for out in outlets:
+            out_df = df_5m[df_5m["outlet"] == out] if not df_5m.empty and "outlet" in df_5m.columns else pd.DataFrame()
+            rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
+            reports[out] = rep
+            if rep.get("raw_alarms"):
+                all_alarms.extend([a.model_dump() if hasattr(a, "model_dump") else a for a in rep["raw_alarms"]])
+
+        payload = {
+            "success": True,
+            "source": data_source,
+            "period": f"{start_dt_str} ~ {end_dt_str}",
+            "outlets": outlets,
+            "reports": reports,
+            "all_alarms": all_alarms,
+            "series_5m": df_5m.to_dict(orient="records") if not df_5m.empty else []
+        }
+        return JSONResponse(status_code=200, content=sanitize_for_json(payload))
+    except Exception as e:
+        import traceback
+        err_msg = f"데이터 조회 오류: {str(e)}"
+        print(f"[get_analysis_data] {err_msg}\n{traceback.format_exc()}")
+        return JSONResponse(status_code=200, content={
+            "success": False,
+            "message": err_msg,
+            "outlets": ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"],
+            "reports": {},
+            "all_alarms": [],
+            "series_5m": []
+        })
 
 def process_date_range_telemetry(start_date_str: str, end_date_str: str, plant_name: str, region_name: str, is_samcheok: bool) -> Tuple[pd.DataFrame, str]:
     """날짜 범위 (start_date ~ end_date) 멀티 테일러드 스티칭 로직"""
@@ -504,40 +530,56 @@ def get_auto_analysis_data(
     [자동 분석 전용 API]
     구글 시트에 30분 주기로 누적 저장된 100% 순수 실측 데이터 조회 및 시각화 반환
     """
-    today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-    start_dt_str = start_date or today_str
-    end_dt_str = end_date or today_str
+    try:
+        today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        start_dt_str = start_date or today_str
+        end_dt_str = end_date or today_str
 
-    plant_name = "한국남부발전(주) 삼척빛드림본부"
-    region_name = "강원도 삼척시"
-    
-    df_30m, data_source = process_date_range_telemetry(start_dt_str, end_dt_str, plant_name, region_name, is_samcheok=True)
-    
-    outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
-    reports = {}
-    all_alarms = []
+        plant_name = "한국남부발전(주) 삼척빛드림본부"
+        region_name = "강원도 삼척시"
+        
+        df_30m, data_source = process_date_range_telemetry(start_dt_str, end_dt_str, plant_name, region_name, is_samcheok=True)
+        
+        outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+        reports = {}
+        all_alarms = []
 
-    for out in outlets:
-        out_df = df_30m[df_30m["outlet"] == out] if not df_30m.empty and "outlet" in df_30m.columns else pd.DataFrame()
-        rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
-        reports[out] = rep
-        if rep.get("raw_alarms"):
-            all_alarms.extend(rep["raw_alarms"])
+        for out in outlets:
+            out_df = df_30m[df_30m["outlet"] == out] if not df_30m.empty and "outlet" in df_30m.columns else pd.DataFrame()
+            rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
+            reports[out] = rep
+            if rep.get("raw_alarms"):
+                all_alarms.extend([a.model_dump() if hasattr(a, "model_dump") else a for a in rep["raw_alarms"]])
 
-    return {
-        "success": True,
-        "source": data_source,
-        "period": f"{start_dt_str} ~ {end_dt_str}",
-        "outlets": outlets,
-        "reports": reports,
-        "all_alarms": all_alarms,
-        "series_30m": (
-            df_30m.assign(
-                status=df_30m["status"].fillna("") if "status" in df_30m.columns else ""
-            ).fillna(0).to_dict(orient="records")
-            if not df_30m.empty else []
-        )
-    }
+        series_data = []
+        if not df_30m.empty:
+            df_clean = df_30m.copy()
+            if "status" in df_clean.columns:
+                df_clean["status"] = df_clean["status"].fillna("정상")
+            series_data = df_clean.to_dict(orient="records")
+
+        payload = {
+            "success": True,
+            "source": data_source,
+            "period": f"{start_dt_str} ~ {end_dt_str}",
+            "outlets": outlets,
+            "reports": reports,
+            "all_alarms": all_alarms,
+            "series_30m": series_data
+        }
+        return JSONResponse(status_code=200, content=sanitize_for_json(payload))
+    except Exception as e:
+        import traceback
+        err_msg = f"자동 분석 데이터 조회 중 예외: {str(e)}"
+        print(f"[get_auto_analysis_data] {err_msg}\n{traceback.format_exc()}")
+        return JSONResponse(status_code=200, content={
+            "success": False,
+            "message": err_msg,
+            "outlets": ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"],
+            "reports": {},
+            "all_alarms": [],
+            "series_30m": []
+        })
 
 @app.get("/api/cron/daily-report")
 def cron_daily_report():
