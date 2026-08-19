@@ -288,26 +288,27 @@ class GoogleSheetsStorage:
                     for r in records:
                         key = f"{r.get('timestamp')}_{r.get('outlet')}"
                         if key not in existing_keys:
-                            # O2/Flow/Temp: API 미제공 시 None → 빈 문자열로 저장
-                            def safe_float(val):
+                            # 수치 필드 안전 변환 (문자열 상태 메시지 예외 방지)
+                            def safe_float(val, default=""):
                                 if val is None or val == "" or (isinstance(val, float) and pd.isna(val)):
-                                    return ""
+                                    return default
                                 try:
                                     return float(val)
                                 except (ValueError, TypeError):
-                                    return ""
+                                    return default
+
                             rows_to_insert.append([
                                 str(r.get("timestamp", "")),
                                 str(r.get("outlet", "")),
                                 str(r.get("fact_manage_nm", "한국남부발전(주) 삼척빛드림본부")),
                                 str(r.get("area_nm", "강원도 삼척시")),
                                 str(r.get("status", "정상")),
-                                float(r.get("TSP", 0.0) or 0.0),
-                                float(r.get("NOX", 0.0) or 0.0),
-                                float(r.get("SOX", 0.0) or 0.0),
-                                safe_float(r.get("O2")),    # API 미제공 → 빈칸
-                                safe_float(r.get("Flow")),  # API 미제공 → 빈칸
-                                safe_float(r.get("Temp")),  # API 미제공 → 빈칸
+                                safe_float(r.get("TSP"), 0.0),
+                                safe_float(r.get("NOX"), 0.0),
+                                safe_float(r.get("SOX"), 0.0),
+                                safe_float(r.get("O2"), ""),     # API 미제공 → 빈칸
+                                safe_float(r.get("Flow"), ""),   # API 미제공 → 빈칸
+                                safe_float(r.get("Temp"), ""),   # API 미제공 → 빈칸
                             ])
 
 
