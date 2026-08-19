@@ -76,16 +76,25 @@
                         </div>
 
                         <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 12px; gap: 12px; flex-wrap: wrap; width: 100%;">
-                            <div class="outlet-selector-box">
-                                <label for="outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택 (요약 카드):</label>
-                                <select id="outlet-select" class="custom-select">
-                                    <option value="ALL" selected>전체 배출구 (통합 보기)</option>
-                                    <option value="배출구 1">배출구 1</option>
-                                    <option value="배출구 2">배출구 2</option>
-                                    <option value="배출구 3">배출구 3</option>
-                                    <option value="배출구 4">배출구 4</option>
-                                    <option value="배출구 5">배출구 5</option>
-                                </select>
+                            <div class="outlet-selector-box" style="display: flex; align-items: center; gap: 16px; flex-wrap: wrap;">
+                                <div>
+                                    <label for="outlet-select"><i class="fa-solid fa-filter"></i> 배출구 선택:</label>
+                                    <select id="outlet-select" class="custom-select">
+                                        <option value="ALL" selected>전체 배출구 (통합 보기)</option>
+                                        <option value="배출구 1">배출구 1</option>
+                                        <option value="배출구 2">배출구 2</option>
+                                        <option value="배출구 3">배출구 3</option>
+                                        <option value="배출구 4">배출구 4</option>
+                                        <option value="배출구 5">배출구 5</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 6px;">
+                                    <label for="manual-history-date" style="font-size: 0.85rem; color: var(--text-secondary); font-weight: 500;"><i class="fa-solid fa-calendar-days"></i> 백업 이력 조회:</label>
+                                    <input type="date" id="manual-history-date" class="form-control form-control-sm" style="width: auto; background: rgba(15, 23, 42, 0.6); color: #fff; border: 1px solid rgba(255,255,255,0.15); padding: 4px 8px; border-radius: 6px;">
+                                    <button id="btn-load-manual-history" class="btn btn-secondary btn-sm" style="padding: 4px 10px;">
+                                        <i class="fa-solid fa-clock-rotate-left"></i> 이력 로드
+                                    </button>
+                                </div>
                             </div>
                             <button id="btn-process-upload" class="btn btn-emerald btn-sm" disabled style="opacity: 0.6; cursor: not-allowed;" title="파일 선택 후 이 버튼을 클릭하시면 엑셀 데이터 분석 및 차트 시각화가 실행됩니다">
                                 <i class="fa-solid fa-play"></i> 수동 엑셀 데이터 분석 및 시각화 실행

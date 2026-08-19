@@ -354,8 +354,129 @@ class StackAnalyzer:
             "avg_flow": averages.get("Flow", 0.0),
             "avg_temp": averages.get("Temp", 0.0),
             "alarm_count": len(alarms),
-            "alarms": alarm_text,
-            "raw_alarms": [a.to_dict() for a in alarms]
+            "alarm_summary": alarm_text,
+            "alarms": [a.to_dict() if hasattr(a, "to_dict") else a for a in alarms]
         }
-        
+
         return report_data
+
+    def validate_5m_against_30m(self, df_5m: pd.DataFrame, df_30m: pd.DataFrame, outlet_name: str = "ALL") -> Dict[str, Any]:
+        """
+        5분 수동 데이터의 30분 평균과 30분 자동 취득 데이터를 대조 검증
+        """
+        if df_5m is None or df_5m.empty:
+            return {
+                "status": "MISSING_5M",
+                "status_message": "5분 데이터 누락",
+                "mismatch_count": 0,
+                "validation_logs": ["5분 수동데이터가 업로드되지 않았거나 누락되었습니다."]
+            }
+        
+        if df_30m is None or df_30m.empty:
+            return {
+                "status": "MISSING_30M",
+                "status_message": "30분 데이터 누락",
+                "mismatch_count": 0,
+                "validation_logs": ["구글 시트 30분 자동 취득 데이터가 수집되지 않았거나 누락되었습니다."]
+            }
+
+        # 5분 데이터 30분 단위 평균 리샘플링
+        def get_30m_slot(ts_str):
+            s = str(ts_str).strip()
+            if len(s) < 16:
+                return s
+            dt_part = s[:14] # 'YYYY-MM-DD HH:'
+            try:
+                m = int(s[14:16])
+                slot = "00" if m < 30 else "30"
+                return f"{dt_part}{slot}"
+            except Exception:
+                return s[:16]
+
+        df_5m_copy = df_5m.copy()
+        if outlet_name != "ALL":
+            df_5m_copy = df_5m_copy[df_5m_copy["outlet"] == outlet_name]
+            df_30m_copy = df_30m[df_30m["outlet"] == outlet_name].copy() if not df_30m.empty else pd.DataFrame()
+        else:
+            df_30m_copy = df_30m.copy() if not df_30m.empty else pd.DataFrame()
+
+        if df_5m_copy.empty:
+            return {
+                "status": "MISSING_5M",
+                "status_message": f"{outlet_name} 5분 데이터 누락",
+                "mismatch_count": 0,
+                "validation_logs": [f"{outlet_name}의 5분 수동 데이터가 없습니다."]
+            }
+
+        if df_30m_copy.empty:
+            return {
+                "status": "MISSING_30M",
+                "status_message": f"{outlet_name} 30분 데이터 누락",
+                "mismatch_count": 0,
+                "validation_logs": [f"{outlet_name}의 30분 자동 수집 데이터가 없습니다."]
+            }
+
+        df_5m_copy["slot"] = df_5m_copy["timestamp"].apply(get_30m_slot)
+        
+        # 슬롯 & 배출구별 5분 데이터 평균 계산
+        grouped_5m = {}
+        for (slot, out), g in df_5m_copy.groupby(["slot", "outlet"]):
+            key = f"{slot}_{out}"
+            grouped_5m[key] = {
+                "TSP": pd.to_numeric(g["TSP"], errors="coerce").dropna().mean(),
+                "NOX": pd.to_numeric(g["NOX"], errors="coerce").dropna().mean(),
+                "SOX": pd.to_numeric(g["SOX"], errors="coerce").dropna().mean(),
+            }
+
+        df_30m_copy["slot"] = df_30m_copy["timestamp"].apply(get_30m_slot)
+        
+        mismatches = []
+        logs = []
+        compared_count = 0
+
+        for idx, row in df_30m_copy.iterrows():
+            slot = str(row["slot"])
+            out = str(row.get("outlet", ""))
+            key = f"{slot}_{out}"
+            
+            if key not in grouped_5m:
+                logs.append(f"[{slot} {out}] 5분 데이터 미수신으로 대조 불가")
+                continue
+
+            m_5m = grouped_5m[key]
+            compared_count += 1
+            
+            # TSP, NOX, SOX 1:1 수치 대조 (허용 오차 0.05 이내)
+            for factor in ["TSP", "NOX", "SOX"]:
+                v_30m = pd.to_numeric(row.get(factor), errors="coerce")
+                v_5m_avg = m_5m.get(factor)
+                
+                if pd.notna(v_30m) and pd.notna(v_5m_avg):
+                    diff = abs(v_30m - v_5m_avg)
+                    if diff > 0.05:
+                        msg = f"[{slot} {out} {factor}] 5분평균({v_5m_avg:.2f}) vs 30분실측({v_30m:.2f}) 불일치 (차이: {diff:.2f})"
+                        mismatches.append(msg)
+                        logs.append(msg)
+
+        if compared_count == 0:
+            return {
+                "status": "MISSING_5M",
+                "status_message": "5분 데이터 누락",
+                "mismatch_count": 0,
+                "validation_logs": ["동일 타임스탬프 슬롯의 5분/30분 데이터가 존재하지 않아 비교가 불가능합니다."]
+            }
+
+        if len(mismatches) == 0:
+            return {
+                "status": "MATCH",
+                "status_message": "일치 검증 완료",
+                "mismatch_count": 0,
+                "validation_logs": [f"총 {compared_count}개 30분 슬롯 대조 결과 100% 일치 검증 완료"]
+            }
+        else:
+            return {
+                "status": "MISMATCH",
+                "status_message": f"불일치 {len(mismatches)}건",
+                "mismatch_count": len(mismatches),
+                "validation_logs": logs
+            }

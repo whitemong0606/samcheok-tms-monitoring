@@ -449,8 +449,171 @@ class GoogleSheetsStorage:
                 return True
             except Exception as e:
                 print(f"[GoogleSheetsStorage] Settings 저장 오류: {e}")
-                
+        return False
+
+    def save_manual_5m_data(self, df: pd.DataFrame) -> bool:
+        """
+        [수동 5분 업로드 데이터 구글 시트 동일 파일 내 백업]
+        단일 지정 구글 시트(GOOGLE_SHEET_ID) 파일 내에 5m_YYYY-MM-DD 워크시트(탭)를 생성하여 5분 수동 데이터를 백업합니다.
+        """
+        if df is None or df.empty:
+            return False
+
+        manual_df = df.copy()
+        def get_date_str(ts_val):
+            s = str(ts_val).strip()
+            digits = "".join(filter(str.isdigit, s))
+            if len(digits) >= 8:
+                return f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+            if len(s) >= 10 and "-" in s:
+                return s[:10]
+            return datetime.now(KST).strftime("%Y-%m-%d")
+
+        manual_df["actual_date"] = manual_df["timestamp"].apply(get_date_str)
+        grouped = manual_df.groupby("actual_date")
+
+        header = ["timestamp", "outlet", "status", "TSP", "NOX", "SOX", "O2", "Flow", "Temp", "TSP_status", "NOX_status", "SOX_status", "O2_status", "Flow_status", "Temp_status"]
+
+        for date_str, group_df in grouped:
+            date_tab = f"5m_{date_str}"
+            records = group_df.drop(columns=["actual_date"], errors="ignore").fillna("").to_dict(orient="records")
+
+            # 1. 로컬 fallback manual_5m_cache 캐시 저장
+            try:
+                for path in [self.fallback_file, "core/storage_fallback.json"]:
+                    if os.path.exists(path):
+                        with open(path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                        if "manual_5m_cache" not in data:
+                            data["manual_5m_cache"] = {}
+                        
+                        existing = data["manual_5m_cache"].get(date_str, [])
+                        existing_map = {str(r.get("timestamp")) + "_" + str(r.get("outlet")): r for r in existing}
+                        for r in records:
+                            k = str(r.get("timestamp")) + "_" + str(r.get("outlet"))
+                            existing_map[k] = r
+                        
+                        data["manual_5m_cache"][date_str] = list(existing_map.values())
+                        with open(path, "w", encoding="utf-8") as f:
+                            json.dump(data, f, ensure_ascii=False, indent=2)
+            except Exception as e:
+                print(f"[GoogleSheetsStorage] 수동 5분 로컬 캐시 저장 예외: {e}")
+
+            # 2. 구글 시트 동일 파일 내 '5m_YYYY-MM-DD' 탭에 저장
+            if not self.spreadsheet:
+                self._connect_sheets()
+
+            if self.spreadsheet:
+                try:
+                    try:
+                        worksheet = self.spreadsheet.worksheet(date_tab)
+                    except Exception:
+                        print(f"[GoogleSheetsStorage] 동일 시트 파일 내 5분 수동 탭 [{date_tab}] 신규 생성")
+                        worksheet = self.spreadsheet.add_worksheet(title=date_tab, rows=2000, cols=16)
+                        worksheet.append_row(header)
+
+                    existing_recs = []
+                    try:
+                        existing_recs = worksheet.get_all_records()
+                    except Exception:
+                        pass
+                    existing_keys = {f"{r.get('timestamp')}_{r.get('outlet')}" for r in existing_recs}
+
+                    rows_to_insert = []
+                    for r in records:
+                        k = f"{r.get('timestamp')}_{r.get('outlet')}"
+                        if k not in existing_keys:
+                            rows_to_insert.append([
+                                str(r.get("timestamp", "")),
+                                str(r.get("outlet", "")),
+                                str(r.get("status", "정상")),
+                                str(r.get("TSP", "0.0")),
+                                str(r.get("NOX", "0.0")),
+                                str(r.get("SOX", "0.0")),
+                                str(r.get("O2", "0.0")),
+                                str(r.get("Flow", "0")),
+                                str(r.get("Temp", "0.0")),
+                                str(r.get("TSP_status", "")),
+                                str(r.get("NOX_status", "")),
+                                str(r.get("SOX_status", "")),
+                                str(r.get("O2_status", "")),
+                                str(r.get("Flow_status", "")),
+                                str(r.get("Temp_status", ""))
+                            ])
+                    if rows_to_insert:
+                        worksheet.append_rows(rows_to_insert)
+                        print(f"[GoogleSheetsStorage] 5분 수동 탭 [{date_tab}] 신규 데이터 {len(rows_to_insert)}건 추가 성공")
+                except Exception as e:
+                    print(f"[GoogleSheetsStorage] 구글시트 5분 수동 탭 [{date_tab}] 저장 실패: {e}")
+
         return True
+
+    def read_manual_5m_data(self, query_date_str: str) -> Optional[pd.DataFrame]:
+        """
+        [동일 구글 시트 파일 5m_YYYY-MM-DD 탭에서 5분 수동 데이터 읽기]
+        """
+        date_tab = f"5m_{query_date_str}"
+        if not self.spreadsheet:
+            self._connect_sheets()
+
+        if self.spreadsheet:
+            try:
+                worksheet = self.spreadsheet.worksheet(date_tab)
+                records = worksheet.get_all_records()
+                if records:
+                    df = pd.DataFrame(records)
+                    df = self.normalize_telemetry_df(df)
+                    df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+                    df.sort_values(by="timestamp", inplace=True)
+                    return df
+            except Exception as e:
+                print(f"[GoogleSheetsStorage] 구글시트 [{date_tab}] 탭 로드 예외: {e}")
+
+        # 로컬 fallback 캐시
+        try:
+            for path in [self.fallback_file, "core/storage_fallback.json"]:
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    cache = data.get("manual_5m_cache", {})
+                    rows = cache.get(query_date_str, [])
+                    if rows:
+                        df = pd.DataFrame(rows)
+                        df = self.normalize_telemetry_df(df)
+                        df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+                        df.sort_values(by="timestamp", inplace=True)
+                        return df
+        except Exception as e:
+            print(f"[GoogleSheetsStorage] 수동 5분 로컬 캐시 로드 예외: {e}")
+        return None
+
+    def get_manual_available_dates(self) -> List[str]:
+        """
+        저장된 5분 수동데이터 날짜 목록 (YYYY-MM-DD) 반환
+        """
+        dates = set()
+        if self.spreadsheet:
+            try:
+                for ws in self.spreadsheet.worksheets():
+                    if ws.title.startswith("5m_"):
+                        dates.add(ws.title[3:])
+            except Exception:
+                pass
+
+        try:
+            for path in [self.fallback_file, "core/storage_fallback.json"]:
+                if os.path.exists(path):
+                    with open(path, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    cache = data.get("manual_5m_cache", {})
+                    dates.update(cache.keys())
+        except Exception:
+            pass
+
+        result = sorted(list(dates), reverse=True)
+        if not result:
+            result = [datetime.now(KST).strftime("%Y-%m-%d")]
+        return result
 
     def add_log(self, level: str, event_type: str, message: str, status: str = "SUCCESS") -> Dict[str, Any]:
         log_entry = {

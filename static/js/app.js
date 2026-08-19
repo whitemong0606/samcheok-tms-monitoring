@@ -4,6 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initTabs();
     initSubTabs();
     initFileUpload();
+    initManualHistoryControls();
     initCleanSysAPI();
     initDatePickers();
     initOutletSelector();
@@ -615,14 +616,34 @@ function renderMetricCards(report) {
         const soxArr = reps.map(r => r.avg_sox).filter(v => v !== undefined && v !== null);
         const mean = arr => arr.length ? (arr.reduce((a, b) => a + b, 0) / arr.length).toFixed(2) : '--';
         
-        document.getElementById('val-status').textContent = '전체 배출구 통합';
-        document.getElementById('val-op-hours').textContent = `배출구 1~5 전체 집계`;
+        let opCount = 0;
+        let stopCount = 0;
+        reps.forEach(r => {
+            if (r.status && r.status.includes('정지')) stopCount++;
+            else opCount++;
+        });
+
+        const statusElem = document.getElementById('val-status');
+        if (statusElem) {
+            statusElem.innerHTML = `<span style="color: var(--accent-emerald);">🟢 ${opCount}개 운전</span> <span style="color: #94a3b8; font-size: 0.88em;">/ 🔴 ${stopCount}개 정지</span>`;
+        }
+        document.getElementById('val-op-hours').textContent = `전체 5개 배출구 통합 요약`;
         document.getElementById('val-tsp').textContent = mean(tspArr);
         document.getElementById('val-nox').textContent = mean(noxArr);
         document.getElementById('val-sox').textContent = mean(soxArr);
     } else {
         report = report || {};
-        document.getElementById('val-status').textContent = report.status || '운전 중';
+        const statusStr = report.status || '정상 운전 중';
+        const statusElem = document.getElementById('val-status');
+        if (statusElem) {
+            if (statusStr.includes('정지')) {
+                statusElem.innerHTML = `<span style="color: var(--accent-rose);">🔴 가동정지</span>`;
+            } else if (statusStr.includes('점검') || statusStr.includes('보수')) {
+                statusElem.innerHTML = `<span style="color: var(--accent-amber);">🟡 점검중</span>`;
+            } else {
+                statusElem.innerHTML = `<span style="color: var(--accent-emerald);">🟢 정상 운전 중</span>`;
+            }
+        }
         document.getElementById('val-op-hours').textContent = `운전 ${report.operating_hours || 0}h / 정지 ${report.stop_hours || 0}h`;
         document.getElementById('val-tsp').textContent = report.avg_tsp !== undefined ? report.avg_tsp : '--';
         document.getElementById('val-nox').textContent = report.avg_nox !== undefined ? report.avg_nox : '--';
@@ -630,13 +651,24 @@ function renderMetricCards(report) {
     }
 
     const valBox = document.getElementById('val-validation');
-    const valLogs = CURRENT_ANALYSIS_DATA ? CURRENT_ANALYSIS_DATA.validation_logs : [];
-    if (valLogs && valLogs.length > 0) {
-        valBox.textContent = `불일치 ${valLogs.length}건`;
-        valBox.style.color = 'var(--accent-amber)';
-    } else {
-        valBox.textContent = '일치 검증 완료';
-        valBox.style.color = 'var(--accent-emerald)';
+    const valRes = CURRENT_ANALYSIS_DATA ? CURRENT_ANALYSIS_DATA.validation : null;
+    
+    if (valBox) {
+        if (valRes) {
+            if (valRes.status === 'MATCH') {
+                valBox.innerHTML = `<span style="color: var(--accent-emerald); font-weight: 600;"><i class="fa-solid fa-circle-check"></i> 일치 검증 완료</span>`;
+            } else if (valRes.status === 'MISMATCH') {
+                valBox.innerHTML = `<span style="color: var(--accent-amber); font-weight: 600;"><i class="fa-solid fa-triangle-exclamation"></i> ${valRes.status_message || '불일치'}</span>`;
+            } else if (valRes.status === 'MISSING_5M') {
+                valBox.innerHTML = `<span style="color: #cbd5e1; font-weight: 500;"><i class="fa-solid fa-circle-minus"></i> 5분 데이터 누락</span>`;
+            } else if (valRes.status === 'MISSING_30M') {
+                valBox.innerHTML = `<span style="color: #cbd5e1; font-weight: 500;"><i class="fa-solid fa-circle-minus"></i> 30분 데이터 누락</span>`;
+            } else {
+                valBox.innerHTML = `<span style="color: var(--accent-emerald); font-weight: 600;">${valRes.status_message || '일치 검증 완료'}</span>`;
+            }
+        } else {
+            valBox.innerHTML = `<span style="color: var(--accent-emerald); font-weight: 600;"><i class="fa-solid fa-circle-check"></i> 일치 검증 완료</span>`;
+        }
     }
 }
 
@@ -1455,4 +1487,60 @@ function renderAutoRawDataTable(series, alarms) {
     });
 
     tbody.appendChild(fragment);
+}
+
+function initManualHistoryControls() {
+    const historyDateInput = document.getElementById('manual-history-date');
+    const loadHistoryBtn = document.getElementById('btn-load-manual-history');
+
+    if (historyDateInput) {
+        const today = new Date().toISOString().substring(0, 10);
+        historyDateInput.value = today;
+    }
+
+    if (loadHistoryBtn) {
+        loadHistoryBtn.addEventListener('click', async () => {
+            const selectedDate = historyDateInput?.value;
+            if (!selectedDate) {
+                showToast('조회할 날짜를 선택해주세요.', 'WARNING');
+                return;
+            }
+            loadManualHistory(selectedDate);
+        });
+    }
+
+    fetchManualAvailableDates();
+}
+
+async function fetchManualAvailableDates() {
+    try {
+        const res = await fetch('/api/analysis/manual/dates');
+        const data = await res.json();
+        if (data.success && data.dates && data.dates.length > 0) {
+            const historyDateInput = document.getElementById('manual-history-date');
+            if (historyDateInput) {
+                historyDateInput.value = data.dates[0];
+            }
+        }
+    } catch (e) {
+        console.error('5분 수동데이터 날짜 목록 조회 실패:', e);
+    }
+}
+
+async function loadManualHistory(dateStr) {
+    showToast(`⏳ [${dateStr}] 5분 수동데이터 구글 시트 백업 이력 조회 중...`);
+    try {
+        const res = await fetch(`/api/analysis/manual/history?date=${dateStr}`);
+        const data = await res.json();
+        if (!data.success) {
+            showToast(data.message || `[${dateStr}] 5분 수동데이터가 없습니다.`, 'WARNING');
+            return;
+        }
+
+        CURRENT_ANALYSIS_DATA = data;
+        handleUploadSuccess(data);
+        showToast(`✅ [${dateStr}] 5분 수동데이터 (${data.total_rows || 0}건) 로드 완료!`);
+    } catch (e) {
+        showToast(`수동이력 로드 실패: ${e.message}`, 'CRITICAL');
+    }
 }

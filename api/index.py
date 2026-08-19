@@ -371,6 +371,23 @@ async def upload_file(file: UploadFile = File(...)):
             if rep.get("raw_alarms"):
                 all_alarms.extend(rep["raw_alarms"])
 
+        # 구글 시트 동일 파일 내 '5m_YYYY-MM-DD' 탭 및 로컬 캐시에 백업 저장
+        try:
+            storage.save_manual_5m_data(df)
+        except Exception as e:
+            print(f"[UploadSaveError] 구글시트 5분 백업 저장 실패: {e}")
+
+        # 30분 자동 수집 데이터 읽어와 5분 vs 30분 비교 검증 수행
+        query_date = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+        if not df.empty and "timestamp" in df.columns:
+            ts_sample = str(df["timestamp"].iloc[0])
+            digits = "".join(filter(str.isdigit, ts_sample))
+            if len(digits) >= 8:
+                query_date = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+
+        df_30m_auto = storage.read_telemetry_data(query_date)
+        validation_res = analyzer.validate_5m_against_30m(df, df_30m_auto, "ALL")
+
         res_payload = {
             "success": True,
             "filename": file.filename,
@@ -379,7 +396,8 @@ async def upload_file(file: UploadFile = File(...)):
             "outlets": outlets,
             "reports": reports,
             "all_alarms": all_alarms,
-            "series_5m": series_records
+            "series_5m": series_records,
+            "validation": validation_res
         }
         return JSONResponse(status_code=200, content=sanitize_for_json(res_payload))
     except Exception as e:
@@ -387,6 +405,76 @@ async def upload_file(file: UploadFile = File(...)):
         err_msg = f"파일 처리 중 오류: {str(e)}"
         print(f"[UploadError] {err_msg}\n{traceback.format_exc()}")
         return JSONResponse(status_code=500, content={"success": False, "detail": err_msg, "message": err_msg})
+
+@app.get("/api/analysis/manual/dates")
+def get_manual_dates():
+    """
+    [저장된 5분 수동 데이터 날짜 목록 조회 API]
+    """
+    try:
+        dates = storage.get_manual_available_dates()
+        return JSONResponse(status_code=200, content={"success": True, "dates": dates})
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "detail": str(e)})
+
+@app.get("/api/analysis/manual/history")
+def get_manual_history(date: str):
+    """
+    [선택 날짜의 5분 수동 데이터 및 비교 검증 조회 API]
+    """
+    try:
+        df_5m = storage.read_manual_5m_data(date)
+        if df_5m is None or df_5m.empty:
+            return JSONResponse(status_code=200, content={
+                "success": False,
+                "message": f"[{date}] 날짜의 5분 수동 데이터가 없습니다.",
+                "series_5m": [],
+                "reports": {},
+                "all_alarms": [],
+                "validation": {
+                    "status": "MISSING_5M",
+                    "status_message": "5분 데이터 누락",
+                    "mismatch_count": 0,
+                    "validation_logs": [f"[{date}] 날짜의 5분 수동 데이터가 없습니다."]
+                }
+            })
+
+        outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+        reports = {}
+        all_alarms = []
+
+        for out in outlets:
+            out_df = df_5m[df_5m["outlet"] == out] if "outlet" in df_5m.columns else pd.DataFrame()
+            rep = analyzer.generate_daily_report(out_df, out, f"{date} 수동이력")
+            reports[out] = rep
+            if rep.get("raw_alarms"):
+                for a in rep["raw_alarms"]:
+                    if hasattr(a, "model_dump"):
+                        all_alarms.append(a.model_dump())
+                    elif hasattr(a, "to_dict"):
+                        all_alarms.append(a.to_dict())
+                    elif isinstance(a, dict):
+                        all_alarms.append(a)
+                    else:
+                        all_alarms.append(str(a))
+
+        df_30m_auto = storage.read_telemetry_data(date)
+        validation_res = analyzer.validate_5m_against_30m(df_5m, df_30m_auto, "ALL")
+
+        series_records = df_5m.to_dict(orient="records")
+        res_payload = {
+            "success": True,
+            "date": date,
+            "total_rows": len(df_5m),
+            "outlets": outlets,
+            "reports": reports,
+            "all_alarms": all_alarms,
+            "series_5m": series_records,
+            "validation": validation_res
+        }
+        return JSONResponse(status_code=200, content=sanitize_for_json(res_payload))
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "detail": str(e)})
 
 @app.get("/api/analysis")
 def get_analysis_data(
