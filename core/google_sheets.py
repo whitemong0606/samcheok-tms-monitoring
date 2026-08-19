@@ -73,11 +73,64 @@ class GoogleSheetsStorage:
         - 당일 탭(2026-08-18)의 모든 실시간 실측 데이터 로드 (00:00:00 ~ 23:59:59)
         - 24시간 연속 차트 구성을 위해 전일 탭(2026-08-17) 08:00 이후 데이터 함께 보충
         """
+    def normalize_telemetry_df(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        구글 시트/로컬 캐시에서 어떤 헤더 텍스트(한글/영문/대소문자/공백)로 읽어오더라도
+        표준 컬럼명(timestamp, outlet, status, TSP, NOX, SOX, O2, Flow, Temp, fact_manage_nm, area_nm)으로 자동 변환
+        """
+        if df is None or df.empty:
+            return df
+
+        col_map = {}
+        for col in df.columns:
+            c_str = str(col).strip().lower()
+            if any(k in c_str for k in ["일시", "시간", "date", "time", "시각", "측정일시"]):
+                col_map[col] = "timestamp"
+            elif any(k in c_str for k in ["배출구", "굴뚝", "stack", "outlet", "호기"]):
+                col_map[col] = "outlet"
+            elif any(k in c_str for k in ["상태", "state", "status", "구분"]):
+                col_map[col] = "status"
+            elif any(k in c_str for k in ["사업장", "공장", "fact_manage_nm"]):
+                col_map[col] = "fact_manage_nm"
+            elif any(k in c_str for k in ["지역", "area_nm"]):
+                col_map[col] = "area_nm"
+            elif "tsp" in c_str or "먼지" in c_str:
+                col_map[col] = "TSP"
+            elif "nox" in c_str or "질소" in c_str:
+                col_map[col] = "NOX"
+            elif "sox" in c_str or "황산" in c_str:
+                col_map[col] = "SOX"
+            elif "o2" in c_str or "산소" in c_str:
+                col_map[col] = "O2"
+            elif "flow" in c_str or "유량" in c_str or "fl1" in c_str:
+                col_map[col] = "Flow"
+            elif "temp" in c_str or "온도" in c_str or "tmp" in c_str:
+                col_map[col] = "Temp"
+
+        df = df.rename(columns=col_map)
+        df = df.loc[:, ~df.columns.duplicated()].copy()
+
+        if "timestamp" not in df.columns and len(df.columns) > 0:
+            df.rename(columns={df.columns[0]: "timestamp"}, inplace=True)
+        if "outlet" not in df.columns and len(df.columns) > 1:
+            df.rename(columns={df.columns[1]: "outlet"}, inplace=True)
+        if "outlet" not in df.columns:
+            df["outlet"] = "배출구 1"
+        if "status" not in df.columns:
+            df["status"] = "정상"
+
+        return df
+
+    def read_telemetry_data(self, query_date_str: str) -> Optional[pd.DataFrame]:
+        """
+        [실시간 순수 실측 데이터 로드]
+        지정 날짜(query_date_str) 및 전일 탭에서 데이터를 수집하여 반환
+        """
         try:
-            query_dt = datetime.strptime(query_date_str, "%Y-%m-%d")
-            prev_date_str = (query_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+            dt_curr = datetime.strptime(query_date_str, "%Y-%m-%d")
+            prev_date_str = (dt_curr - timedelta(days=1)).strftime("%Y-%m-%d")
         except Exception:
-            return None
+            prev_date_str = query_date_str
 
         combined_rows = []
 
@@ -85,37 +138,48 @@ class GoogleSheetsStorage:
             self._connect_sheets()
 
         if self.spreadsheet:
-            # 1. 당일 탭(YYYY-MM-DD)에서 최신 실시간 실측 데이터 전수 로드
+            # 1. 당일 탭(YYYY-MM-DD) 데이터 전수 로드
             try:
                 ws_curr = self.spreadsheet.worksheet(query_date_str)
                 recs_curr = ws_curr.get_all_records()
                 for r in recs_curr:
-                    ts = str(r.get("timestamp", ""))
-                    if ts:
+                    ts_val = None
+                    for k, v in r.items():
+                        k_lower = str(k).strip().lower()
+                        if any(term in k_lower for term in ["timestamp", "일시", "시간", "date", "time", "시각", "측정일시"]):
+                            if v and str(v).strip():
+                                ts_val = str(v).strip()
+                                break
+                    if ts_val:
                         combined_rows.append(r)
-            except Exception:
-                pass
+            except Exception as e:
+                print(f"[GoogleSheetsStorage] [{query_date_str}] 탭 읽기 예외: {e}")
 
-            # 2. 전일 탭(YYYY-MM-DD) 데이터가 있고 당일 탭 데이터가 부족한 경우 전일 08:00 이후 데이터 보충
+            # 2. 전일 탭 데이터 보충
             if len(combined_rows) < 48:
                 try:
                     ws_prev = self.spreadsheet.worksheet(prev_date_str)
                     recs_prev = ws_prev.get_all_records()
                     start_ts = f"{prev_date_str} 08:00:00"
-                    prev_rows = [r for r in recs_prev if str(r.get("timestamp", "")) >= start_ts]
-                    combined_rows = prev_rows + combined_rows
-                except Exception:
-                    pass
+                    for r in recs_prev:
+                        ts_val = None
+                        for k, v in r.items():
+                            k_lower = str(k).strip().lower()
+                            if any(term in k_lower for term in ["timestamp", "일시", "시간", "date", "time", "시각", "측정일시"]):
+                                if v and str(v).strip():
+                                    ts_val = str(v).strip()
+                                    break
+                        if ts_val and ts_val >= start_ts:
+                            combined_rows.append(r)
+                except Exception as e:
+                    print(f"[GoogleSheetsStorage] [{prev_date_str}] 전일 탭 읽기 예외: {e}")
 
             if combined_rows:
                 df = pd.DataFrame(combined_rows)
+                df = self.normalize_telemetry_df(df)
                 df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
                 df.sort_values(by="timestamp", inplace=True)
-                if "fact_manage_nm" in df.columns:
-                    samcheok_df = df[df["fact_manage_nm"].astype(str).str.contains("삼척|남부발전")]
-                    if not samcheok_df.empty:
-                        print(f"[GoogleSheetsStorage] [{query_date_str}] 탭 삼척 실시간 데이터 {len(samcheok_df)}건 로드 성공!")
-                        return samcheok_df
+                print(f"[GoogleSheetsStorage] [{query_date_str}] 탭 데이터 {len(df)}건 정규화 로드 성공!")
                 return df
 
         # 로컬 Fallback 캐시 조회
@@ -128,11 +192,12 @@ class GoogleSheetsStorage:
                 rows = prev_rows + curr_rows
                 if rows:
                     df = pd.DataFrame(rows)
+                    df = self.normalize_telemetry_df(df)
                     df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
                     df.sort_values(by="timestamp", inplace=True)
                     return df
-        except Exception:
-            pass
+        except Exception as e:
+            print(f"[GoogleSheetsStorage] 로컬 캐시 로드 예외: {e}")
 
         return None
 
@@ -200,6 +265,11 @@ class GoogleSheetsStorage:
                     # 해당 실제 날짜(YYYY-MM-DD) 탭 가져오기 또는 새로 생성
                     try:
                         worksheet = self.spreadsheet.worksheet(date_tab)
+                        # 기존 탭의 1행 헤더에 'status'가 없으면 헤더 행 11열로 자동 업데이트
+                        first_row = worksheet.row_values(1)
+                        if first_row and "status" not in [str(c).lower().strip() for c in first_row]:
+                            print(f"[GoogleSheetsStorage] [{date_tab}] 탭 헤더 'status' 포함 갱신 (11열 구조)")
+                            worksheet.update("A1:K1", [header])
                     except Exception:
                         print(f"[GoogleSheetsStorage] 실제 날짜 시트 탭 [{date_tab}] 새로 생성")
                         worksheet = self.spreadsheet.add_worksheet(title=date_tab, rows=2000, cols=12)
