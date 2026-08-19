@@ -273,6 +273,26 @@ async def upload_file(file: UploadFile = File(...)):
                 return s
             df["outlet"] = df["outlet"].apply(norm_out)
 
+        # 계측기 상태 컬럼(AL열 등) 종합 탐색 및 row별 상태 문구 추출
+        statuses = []
+        for idx, row in df.iterrows():
+            st_found = None
+            # 1. 엑셀 행 내 모든 셀을 전수 조사하여 보수중, 보수, 점검, 자료확인중, 가동중지 탐색 (Column AL 등)
+            for col_name, val in row.items():
+                val_str = str(val).strip()
+                if any(k in val_str for k in ["보수중", "보수", "점검", "자료확인", "불량", "가동중지"]):
+                    st_found = val_str
+                    break
+            
+            if st_found:
+                statuses.append(st_found)
+            elif "status" in df.columns and pd.notna(row.get("status")):
+                statuses.append(str(row.get("status")).strip())
+            else:
+                statuses.append("정상")
+
+        df["status"] = statuses
+
         for factor in config.FACTORS:
             if factor in df.columns:
                 target_col = df[factor]

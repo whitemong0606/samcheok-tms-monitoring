@@ -194,7 +194,7 @@ class StackAnalyzer:
                             level="WARNING"
                         ))
 
-            # 4. 고정 데이터 알람 (Frozen Data)
+            # 4. 고정 데이터 알람 (Frozen Data) - 정상 운전 상태(OPERATING) 및 수치 0 초과 시에만 감지
             consecutive_count = 1
             last_val = None
             
@@ -202,7 +202,14 @@ class StackAnalyzer:
                 val = series.iloc[idx]
                 st_val = state_series.iloc[idx]
                 row_time = str(df["timestamp"].iloc[idx])
+                row_status = str(df["status"].iloc[idx]) if "status" in df.columns else ""
                 
+                # 계측기 상태가 보수/점검/자료확인/가동중지인 행은 알람 감지 대상에서 제외
+                if st_val in ["MAINTENANCE", "STOP"] or any(k in row_status for k in ["보수", "점검", "자료확인", "정지", "가동중지"]):
+                    consecutive_count = 1
+                    last_val = None
+                    continue
+
                 if pd.notna(val) and val == last_val:
                     consecutive_count += 1
                 else:
@@ -221,14 +228,16 @@ class StackAnalyzer:
                                 level="WARNING"
                             ))
                     else:
-                        alarms.append(AlarmEvent(
-                            timestamp=row_time,
-                            outlet=outlet_name,
-                            factor=factor,
-                            alarm_type="FROZEN_DATA",
-                            message=f"{factor} 고정 데이터 알람 (수치 {val:.2f}가 10회 연속 동일 지시)",
-                            level="WARNING"
-                        ))
+                        # Flow / Temp / O2 등도 수치 0 초과인 유효 동작 값일 때만 고정 데이터 알람 감지
+                        if val is not None and float(val) > 0.0:
+                            alarms.append(AlarmEvent(
+                                timestamp=row_time,
+                                outlet=outlet_name,
+                                factor=factor,
+                                alarm_type="FROZEN_DATA",
+                                message=f"{factor} 고정 데이터 알람 (수치 {val:.2f}가 10회 연속 동일 지시)",
+                                level="WARNING"
+                            ))
             
             if factor in ["SOX", "NOX"]:
                 op_df = df[state_series == "OPERATING"]
