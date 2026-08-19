@@ -316,7 +316,7 @@ class StackAnalyzer:
         if len(maint_df) > 0 and len(maint_df) >= len(op_df):
             status_summary = "점검 중"
         elif len(stop_df) > len(op_df):
-            status_summary = "가동 정지"
+            status_summary = "가동정지"
         else:
             status_summary = "정상 운전 중"
         

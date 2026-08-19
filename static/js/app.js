@@ -1108,16 +1108,6 @@ async function loadAutoAnalysisData() {
             const outletSelect = document.getElementById('auto-outlet-select');
             const selectedOutlet = outletSelect ? outletSelect.value : 'ALL';
             
-            const repKey = (selectedOutlet === 'ALL') ? '배출구 3' : selectedOutlet;
-            const rep = data.reports[repKey] || data.reports['배출구 3'];
-
-            if (rep) {
-                document.getElementById('auto-val-status').textContent = rep.status || '운전 중';
-                document.getElementById('auto-val-tsp').textContent = rep.avg_tsp !== undefined ? rep.avg_tsp.toFixed(2) : '--';
-                document.getElementById('auto-val-nox').textContent = rep.avg_nox !== undefined ? rep.avg_nox.toFixed(2) : '--';
-                document.getElementById('auto-val-sox').textContent = rep.avg_sox !== undefined ? rep.avg_sox.toFixed(2) : '--';
-            }
-
             const updatedElem = document.getElementById('auto-last-updated');
             if (updatedElem && data.series_30m && data.series_30m.length > 0) {
                 const lastTs = data.series_30m[data.series_30m.length - 1].timestamp;
@@ -1135,19 +1125,24 @@ async function loadAutoAnalysisData() {
             allOutlets.forEach(out => {
                 const outRows = series30m.filter(s => s.outlet === out);
                 if (outRows.length > 0) {
-                    // timestamp 기준 최신 row
                     const latestRow = outRows.reduce((a, b) => a.timestamp > b.timestamp ? a : b);
                     latestStatusByOutlet[out] = latestRow.status || '';
                 }
             });
 
-            // 상태 아이콘/색상 결정 (CleanSYS 원문 상태 문자열 기준)
-            const statusIcon = (rawStatus) => {
-                const st = rawStatus || '';
-                if (!st || st === '정상') return { icon: '🟢', label: '정상 운전 중', cls: 'status-ok' };
-                if (/가동중지|가동 중지|미운전|정지/i.test(st)) return { icon: '🔴', label: st, cls: 'status-stop' };
-                if (/점검|자료확인|보수|불량/i.test(st)) return { icon: '🟡', label: st, cls: 'status-maint' };
-                return { icon: '🟢', label: st, cls: 'status-ok' };
+            // 상태 규격화 표시 함수 (원문 문자열 -> 정돈된 레이블)
+            const formatStatus = (rawStatus) => {
+                const st = String(rawStatus || '').trim();
+                if (!st || st === '정상' || st === '0' || st === '0.0') {
+                    return { icon: '🟢', label: '정상 운전 중', badgeCls: 'badge-success', shortLabel: '정상' };
+                }
+                if (/가동중지|가동 중지|미운전|정지/i.test(st)) {
+                    return { icon: '🔴', label: '가동정지', badgeCls: 'badge-secondary', shortLabel: '가동정지' };
+                }
+                if (/점검|자료확인|자료 확인|보수|불량/i.test(st)) {
+                    return { icon: '🟡', label: '점검 중', badgeCls: 'badge-warning', shortLabel: '점검 중' };
+                }
+                return { icon: '🟢', label: st, badgeCls: 'badge-info', shortLabel: st };
             };
 
             if (selectedOutlet === 'ALL') {
@@ -1155,7 +1150,7 @@ async function loadAutoAnalysisData() {
                 const statusLines = allOutlets.map(out => {
                     const rawSt = latestStatusByOutlet[out];
                     if (rawSt === undefined) return `${out}: ❓ 데이터 없음`;
-                    const { icon, label } = statusIcon(rawSt);
+                    const { icon, label } = formatStatus(rawSt);
                     return `${out}: ${icon} ${label}`;
                 });
                 statusEl.innerHTML = statusLines.map(l =>
@@ -1165,7 +1160,7 @@ async function loadAutoAnalysisData() {
                 if (hoursEl) hoursEl.textContent = '전체 5개 배출구 실시간 상태';
             } else {
                 const rawSt = latestStatusByOutlet[selectedOutlet];
-                const { icon, label } = statusIcon(rawSt);
+                const { icon, label } = formatStatus(rawSt);
                 statusEl.textContent = `${icon} ${label}`;
                 statusEl.style.fontSize = '';
                 const rep = data.reports[selectedOutlet];
@@ -1338,15 +1333,14 @@ function renderAutoRawDataTable(series) {
 
     targetList.forEach(r => {
         const tr = document.createElement('tr');
-        const st = r.status || '정상';
+        const st = String(r.status || '').trim();
         
         let stBadge = `<span class="badge badge-success">정상</span>`;
         if (/가동중지|가동 중지|미운전|정지/i.test(st)) {
-            stBadge = `<span class="badge badge-secondary">${st}</span>`;
+            stBadge = `<span class="badge badge-secondary">가동정지</span>`;
         } else if (/점검|자료확인|보수|불량/i.test(st)) {
-            stBadge = `<span class="badge badge-warning">${st}</span>`;
-        } else if (st !== '정상' && st !== '') {
-            // 기타 상태 (자료확인중 등)
+            stBadge = `<span class="badge badge-warning">점검중</span>`;
+        } else if (st !== '정상' && st !== '0' && st !== '0.0' && st !== '') {
             stBadge = `<span class="badge badge-info">${st}</span>`;
         }
 
