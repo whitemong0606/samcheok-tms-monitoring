@@ -47,18 +47,13 @@ class SystemConfig:
     STOP_TEMP_THRESHOLD = 70.0     # °C 이하
 
     DEFAULT_TEMPLATE = (
-        "📊 <b>[굴뚝 배출가스 일일 모니터링 리포트]</b>\n"
-        "📅 <b>기간:</b> {date}\n"
-        "🏭 <b>배출구:</b> {outlet}\n"
-        "⚙️ <b>상태:</b> {status} (운전시간: {operating_hours}시간)\n\n"
-        "🔹 <b>운전 중 평균 수치:</b>\n"
-        "• TSP: {avg_tsp} mg/m³\n"
-        "• NOX: {avg_nox} ppm\n"
-        "• SOX: {avg_sox} ppm\n"
-        "• O2: {avg_o2} %\n"
-        "• Flow: {avg_flow} m³/h\n"
-        "• Temp: {avg_temp} °C\n\n"
-        "⚠️ <b>이상 신호 감지 내역 ({alarm_count}건):</b>\n"
+        "📊 <b>[삼척빛드림본부 굴뚝 배출가스 일일 종합 리포트]</b>\n"
+        "📅 <b>기간:</b> {date}\n\n"
+        "🏭 <b>[배출구별 설비 운전 상태]</b>\n"
+        "{outlets_status}\n\n"
+        "🔹 <b>[배출구별 운전 중 평균 수치]</b>\n"
+        "{outlets_averages}\n\n"
+        "⚠️ <b>[배출구별 이상 신호 감지 내역 ({alarm_count}건)]</b>\n"
         "{alarms}"
     )
 

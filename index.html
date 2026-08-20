@@ -466,13 +466,16 @@
                         </div>
                         <div class="tag-chips">
                             <span class="chip" onclick="insertTag('{date}')">{date}</span>
+                            <span class="chip" onclick="insertTag('{outlets_status}')" style="color:var(--accent-cyan); font-weight:600;">{outlets_status}</span>
+                            <span class="chip" onclick="insertTag('{outlets_averages}')" style="color:var(--accent-cyan); font-weight:600;">{outlets_averages}</span>
+                            <span class="chip" onclick="insertTag('{alarms}')">{alarms}</span>
+                            <span class="chip" onclick="insertTag('{alarm_count}')">{alarm_count}</span>
                             <span class="chip" onclick="insertTag('{outlet}')">{outlet}</span>
                             <span class="chip" onclick="insertTag('{status}')">{status}</span>
                             <span class="chip" onclick="insertTag('{operating_hours}')">{operating_hours}</span>
                             <span class="chip" onclick="insertTag('{avg_tsp}')">{avg_tsp}</span>
                             <span class="chip" onclick="insertTag('{avg_nox}')">{avg_nox}</span>
                             <span class="chip" onclick="insertTag('{avg_sox}')">{avg_sox}</span>
-                            <span class="chip" onclick="insertTag('{alarms}')">{alarms}</span>
                         </div>
                         <div class="form-group">
                             <textarea id="template-text" class="template-textarea" rows="10"></textarea>

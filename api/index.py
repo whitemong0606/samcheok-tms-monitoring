@@ -806,22 +806,33 @@ def cron_daily_report():
         sheets_save_result = storage.append_telemetry_data(df_raw, date_str)
         
         outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
-        reports_sent = []
+        reports_map = {}
+        all_alarms = []
 
         for out in outlets:
             out_df = df_raw[df_raw["outlet"] == out] if not df_raw.empty and "outlet" in df_raw.columns else pd.DataFrame()
             rep = analyzer.generate_daily_report(out_df, out, date_str)
             storage.save_daily_report(rep)
-            msg = telegram_bot.render_template(rep)
-            telegram_res = telegram_bot.send_message(msg)
-            reports_sent.append({"outlet": out, "telegram_status": telegram_res.get("status")})
+            reports_map[out] = rep
+            if rep.get("alarms"):
+                all_alarms.extend(rep["alarms"])
+
+        comprehensive_report = {
+            "date": date_str,
+            "reports": reports_map,
+            "all_alarms": all_alarms,
+            "alarm_count": len(all_alarms)
+        }
+        msg = telegram_bot.render_template(comprehensive_report)
+        telegram_res = telegram_bot.send_message(msg)
 
         return {
             "success": True,
             "report_date": date_str,
             "items_count": len(df_raw),
             "google_sheets_saved": sheets_save_result,
-            "outlets_processed": reports_sent
+            "telegram_result": telegram_res,
+            "outlets_processed": list(reports_map.keys())
         }
     except Exception as e:
         return {"success": False, "error": f"일일 자동 수집 및 구글 시트 저장 오류: {str(e)}"}
