@@ -12,6 +12,7 @@ from core.config import config, default_limits
 from core.analyzer import StackAnalyzer
 from core.google_sheets import storage
 from core.telegram_bot import telegram_bot
+from core.discord_bot import discord_bot
 from core.simulator import simulator
 from core.cleansys_api import cleansys_client
 from core.plant_registry import get_plant_registry
@@ -825,6 +826,7 @@ def cron_daily_report():
         }
         msg = telegram_bot.render_template(comprehensive_report)
         telegram_res = telegram_bot.send_message(msg)
+        discord_res = discord_bot.send_message(msg)
 
         return {
             "success": True,
@@ -832,6 +834,7 @@ def cron_daily_report():
             "items_count": len(df_raw),
             "google_sheets_saved": sheets_save_result,
             "telegram_result": telegram_res,
+            "discord_result": discord_res,
             "outlets_processed": list(reports_map.keys())
         }
     except Exception as e:
@@ -845,6 +848,7 @@ def get_settings():
         "settings": {
             "bot_token": st.get("bot_token", config.TELEGRAM_BOT_TOKEN),
             "chat_id": st.get("chat_id", config.TELEGRAM_CHAT_ID),
+            "discord_webhook_url": st.get("discord_webhook_url", ""),
             "google_sheet_id": st.get("google_sheet_id", config.GOOGLE_SHEET_ID),
             "report_time": st.get("report_time", "08:30"),
             "template": st.get("template", config.DEFAULT_TEMPLATE),
@@ -862,7 +866,8 @@ def update_settings(payload: Dict[str, Any]):
 @app.post("/api/simulate")
 def run_simulation(outlet: str = "배출구 1"):
     try:
-        res = simulator.run_simulation_test(outlet_name=outlet)
+        real_df = UPLOADED_DATA.get("latest")
+        res = simulator.run_simulation_test(outlet_name=outlet, real_df=real_df)
         return {
             "success": True,
             "data": res

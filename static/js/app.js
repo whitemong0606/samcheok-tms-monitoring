@@ -978,6 +978,7 @@ async function loadSettings() {
             const s = data.settings;
             if (document.getElementById('bot-token')) document.getElementById('bot-token').value = s.bot_token || '';
             if (document.getElementById('chat-id')) document.getElementById('chat-id').value = s.chat_id || '';
+            if (document.getElementById('discord-webhook-url')) document.getElementById('discord-webhook-url').value = s.discord_webhook_url || '';
             if (document.getElementById('google-sheet-id')) document.getElementById('google-sheet-id').value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
             if (document.getElementById('report-time')) document.getElementById('report-time').value = s.report_time || '08:30';
             if (document.getElementById('template-text')) document.getElementById('template-text').value = s.template || '';
@@ -1005,6 +1006,7 @@ async function saveSettings(e) {
 
     const botTokenVal = document.getElementById('bot-token')?.value?.trim() || '';
     const chatIdVal = document.getElementById('chat-id')?.value?.trim() || '';
+    const discordWebhookVal = document.getElementById('discord-webhook-url')?.value?.trim() || '';
     const sheetIdVal = document.getElementById('google-sheet-id')?.value?.trim() || '';
     const reportTimeVal = document.getElementById('report-time')?.value || '08:30';
     const templateVal = document.getElementById('template-text')?.value || '';
@@ -1015,6 +1017,7 @@ async function saveSettings(e) {
     const payload = {
         bot_token: botTokenVal,
         chat_id: chatIdVal,
+        discord_webhook_url: discordWebhookVal,
         google_sheet_id: sheetIdVal,
         report_time: reportTimeVal,
         template: templateVal,
@@ -1043,9 +1046,9 @@ async function saveSettings(e) {
         if (data.success) {
             if (resultDiv) {
                 resultDiv.style.display = 'block';
-                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 완료!</b> 텔레그램 Bot Token 및 배출 기준치가 성공적으로 반영되었습니다.</div>`;
+                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 완료!</b> 텔레그램 / 디스코드 Webhook 및 배출 기준치가 성공적으로 반영되었습니다.</div>`;
             }
-            showToast('✅ Bot 설정 및 기준치가 저장되었습니다!');
+            showToast('✅ Bot 및 알림 설정이 저장되었습니다!');
             loadSettings();
             loadLogs();
         } else {
@@ -1099,10 +1102,10 @@ async function triggerSimulation(e) {
 
     if (btnSim) {
         btnSim.disabled = true;
-        btnSim.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 시뮬레이션 및 발송 중...';
+        btnSim.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 실측 데이터 분석 및 발송 중...';
     }
 
-    showToast(`🧪 가상 데이터 생성 -> 분석 -> 텔레그램 테스트 발송 실행 중...`);
+    showToast(`📡 실측 굴뚝 데이터 분석 -> 텔레그램 / 디스코드 테스트 발송 실행 중...`);
     
     try {
         const res = await fetch(`/api/simulate?outlet=${encodeURIComponent(currentOutlet)}`, {
@@ -1113,22 +1116,24 @@ async function triggerSimulation(e) {
         if (data.success) {
             const sim = data.data;
             const tg = sim.telegram_result || {};
-            const isMock = tg.is_mock;
-            const isOk = tg.success;
+            const dc = sim.discord_result || {};
+            const isReal = sim.is_real_data;
+            const period = sim.period || '';
+
+            let sendTargets = [];
+            if (tg.success && !tg.is_mock) sendTargets.push("텔레그램");
+            if (dc.success && !dc.is_mock) sendTargets.push("디스코드");
             
-            if (isOk && !isMock) {
-                showToast(`✅ 실제 텔레그램 발송 성공! (${sim.detected_alarm_count || 0}건 이상 신호 감지)`);
-            } else if (isOk && isMock) {
-                showToast(`ℹ️ Token/Chat ID 미설정으로 가상 발송 성공 (${sim.detected_alarm_count || 0}건)`);
-            } else {
-                showToast(`⚠️ 텔레그램 전송 실패: ${tg.error || '오류'}`, 'ERROR');
-            }
+            const targetText = sendTargets.length > 0 ? `${sendTargets.join(' 및 ')} 전송 완료` : "가상 발송 완료 (미설정)";
+            const dataBadge = isReal ? "📡 실측 데이터 기반" : "🧪 시뮬레이션 기반";
+
+            showToast(`✅ [${dataBadge}] ${targetText}! (${period})`);
             loadLogs();
         } else {
-            showToast(`시뮬레이션 오류: ${data.detail || data.error || '실행 오류'}`, 'ERROR');
+            showToast(`발송 오류: ${data.detail || data.error || '실행 오류'}`, 'ERROR');
         }
     } catch (err) {
-        showToast(`시뮬레이션 통신 실패: ${err.message}`, 'ERROR');
+        showToast(`통신 실패: ${err.message}`, 'ERROR');
     } finally {
         if (btnSim) {
             btnSim.disabled = false;

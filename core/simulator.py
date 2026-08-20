@@ -4,6 +4,8 @@ from datetime import datetime, timedelta
 from typing import Dict, Any, List
 from core.analyzer import StackAnalyzer
 from core.telegram_bot import telegram_bot
+from core.discord_bot import discord_bot
+from core.cleansys_api import cleansys_client
 from core.google_sheets import storage
 from core.config import config
 
@@ -54,15 +56,11 @@ class StackSimulator:
             "SOX": np.round(np.maximum(0, sox_base), 2)
         })
 
-        # 배출구 1, 3에 이상 징후 인젝션 (테스트 검증용)
         if outlet_name == "배출구 1":
-            # 1. 헌팅 (급변동): 10:00 경 (idx 24) Temp, Flow 60% 급증
             df.loc[24:28, "Flow"] = df.loc[24:28, "Flow"] * 1.65
             df.loc[24:28, "Temp"] = df.loc[24:28, "Temp"] * 1.55
-            # 2. 기준치 초과: 14:30 경 (idx 78) TSP 28.5 mg/m³ (기준 15.0)
             df.loc[78:80, "TSP"] = 28.50
         elif outlet_name == "배출구 3":
-            # 3. 고정 데이터 알람: 16:00 경 (idx 96~112) NOX 값 32.40ppm 15회 연속 고정
             df.loc[96:112, "NOX"] = 32.40
 
         return df
@@ -72,54 +70,118 @@ class StackSimulator:
             date_str = datetime.now().strftime("%Y-%m-%d")
         return self.generate_outlet_mock(outlet_name, date_str)
 
-    def run_simulation_test(self, outlet_name: str = "ALL") -> Dict[str, Any]:
+    def run_simulation_test(self, outlet_name: str = "ALL", real_df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """
-        배출구 1~5 전체 시뮬레이션 데이터 생성 -> 종합 분석 수행 -> 텔레그램 종합 테스트 발송
+        [실제 굴뚝 측정 데이터 기반 테스트 발송]
+        1. 실제 수집된 24시간 실측 데이터(전일 08:00 ~ 금일 08:00)가 있으면 이를 1순위로 분석
+        2. 없으면 CleanSYS API 실시간 조회 또는 가상 시뮬레이션 데이터로 안전 대체
+        3. 텔레그램 및 디스코드 웹후크 동시 발송
         """
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        now_dt = datetime.now()
+        prev_dt = now_dt - timedelta(days=1)
+        today_str = now_dt.strftime("%Y-%m-%d")
+        prev_str = prev_dt.strftime("%Y-%m-%d")
+        default_period_str = f"{prev_str} 08:00 ~ {today_str} 08:00"
+
         outlets = config.OUTLETS
-        
-        all_dfs = []
+        df_target = None
+        is_real_data = False
+
+        # 1. 전달받은 실데이터 확인
+        if real_df is not None and not real_df.empty:
+            df_target = real_df
+            is_real_data = True
+
+        # 2. 구글 시트 / 캐시 실측 데이터 확인
+        if df_target is None or df_target.empty:
+            try:
+                df_sheet = storage.read_telemetry_data(today_str)
+                if df_sheet is not None and not df_sheet.empty and len(df_sheet) >= 10:
+                    df_target = df_sheet
+                    is_real_data = True
+            except Exception:
+                pass
+
+        # 3. CleanSYS 실시간 공단 API 조회 시도
+        if df_target is None or df_target.empty:
+            try:
+                df_api = cleansys_client.get_raw_telemetry_dataframe("한국남부발전(주) 삼척빛드림본부", "강원도 삼척시")
+                if df_api is not None and not df_api.empty:
+                    df_target = df_api
+                    is_real_data = True
+            except Exception:
+                pass
+
+        # 4. 분석 기간(전일 08:00 ~ 금일 08:00 또는 실제 수집된 최신 시간대) 결정
+        if is_real_data and df_target is not None and "timestamp" in df_target.columns:
+            ts_series = df_target["timestamp"].astype(str)
+            min_ts = ts_series.min()
+            max_ts = ts_series.max()
+            period_str = f"{min_ts} ~ {max_ts}"
+        else:
+            period_str = default_period_str
+
+        # 5. 배출구 1~5 개별 리포트 생성 및 취합
         reports_by_outlet = {}
         all_alarms = []
         total_rows = 0
 
         for idx, out in enumerate(outlets):
-            out_df = self.generate_outlet_mock(out, date_str, seed=42 + idx * 10)
-            all_dfs.append(out_df)
-            rep = self.analyzer.generate_daily_report(out_df, out, date_str)
+            if is_real_data and df_target is not None and "outlet" in df_target.columns:
+                out_df = df_target[df_target["outlet"] == out]
+                if out_df.empty:
+                    # 해당 배출구 데이터 부재 시
+                    rep = {
+                        "date": period_str,
+                        "outlet": out,
+                        "status": "⚪ 데이터 없음",
+                        "operating_hours": 0.0,
+                        "stop_hours": 0.0,
+                        "avg_tsp": 0.0, "avg_nox": 0.0, "avg_sox": 0.0, "avg_o2": 0.0, "avg_flow": 0.0, "avg_temp": 0.0,
+                        "alarm_count": 0, "alarm_summary": "• 데이터 미수집", "alarms": []
+                    }
+                else:
+                    rep = self.analyzer.generate_daily_report(out_df, out, period_str)
+                    total_rows += len(out_df)
+            else:
+                out_df = self.generate_outlet_mock(out, today_str, seed=42 + idx * 10)
+                rep = self.analyzer.generate_daily_report(out_df, out, period_str)
+                total_rows += len(out_df)
+
             reports_by_outlet[out] = rep
             if rep.get("alarms"):
                 all_alarms.extend(rep["alarms"])
-            total_rows += len(out_df)
 
         comprehensive_report = {
-            "date": date_str,
+            "date": period_str,
             "outlets": outlets,
             "reports": reports_by_outlet,
             "all_alarms": all_alarms,
             "alarm_count": len(all_alarms)
         }
 
-        # 텔레그램 메세지 렌더링
+        # 6. 메시지 렌더링
         message_text = telegram_bot.render_template(comprehensive_report)
         
-        # 강조 헤딩 추가
-        sim_heading = "🧪 <b>[시스템 시뮬레이션 테스트 발송]</b>\n"
-        full_message = sim_heading + message_text
+        # 안내 타이틀
+        prefix = "📡 <b>[삼척빛드림본부 실측 데이터 리포트]</b>\n" if is_real_data else "🧪 <b>[삼척빛드림본부 테스트 리포트]</b>\n"
+        full_message = prefix + message_text
 
-        # 텔레그램 발송
-        send_result = telegram_bot.send_message(full_message)
+        # 7. 텔레그램 및 디스코드 동시 발송
+        tg_result = telegram_bot.send_message(full_message)
+        dc_result = discord_bot.send_message(full_message)
 
         return {
             "simulation_success": True,
-            "date": date_str,
+            "is_real_data": is_real_data,
+            "period": period_str,
             "outlets": outlets,
             "reports": reports_by_outlet,
             "total_rows": total_rows,
             "detected_alarm_count": len(all_alarms),
             "raw_alarms": all_alarms,
-            "telegram_result": send_result,
+            "telegram_result": tg_result,
+            "discord_result": dc_result,
             "sent_message_preview": full_message
         }
 
