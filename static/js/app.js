@@ -9,6 +9,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initDatePickers();
     initOutletSelector();
     initSettings();
+    initTelegramTest();
     initSimulation();
     initLogs();
     
@@ -38,19 +39,22 @@ function initTabs() {
     });
 }
 
-// 2. File Drag & Drop Upload
+// 2. File Drag & Drop Upload (Multi-file support)
 function initFileUpload() {
     const fileInput = document.getElementById('file-upload');
     const dropzone = document.getElementById('dropzone');
     const processBtn = document.getElementById('btn-process-upload');
     if (!fileInput || !dropzone) return;
 
-    function handleFileSelected(file) {
-        if (!file) return;
-        window.selectedManualFile = file;
+    window.selectedManualFiles = [];
+
+    function handleFilesSelected(fileList) {
+        if (!fileList || fileList.length === 0) return;
+        window.selectedManualFiles = Array.from(fileList);
+        const fileNames = window.selectedManualFiles.map(f => f.name).join(', ');
         const textElem = dropzone.querySelector('.dropzone-text');
         if (textElem) {
-            textElem.innerHTML = `<strong style="color: var(--accent-cyan); font-size: 1.05rem;"><i class="fa-solid fa-file-excel"></i> ${file.name}</strong><span style="color: #fef08a;">파일 인식 완료! 아래 [수동 엑셀 데이터 분석 및 시각화 실행] 버튼을 클릭하세요.</span>`;
+            textElem.innerHTML = `<strong style="color: var(--accent-cyan); font-size: 1.05rem;"><i class="fa-solid fa-file-excel"></i> ${window.selectedManualFiles.length}개 파일 선택됨</strong><span style="color: #fef08a; font-size:0.85rem;">${fileNames}</span><span style="color:#94a3b8; font-size:0.82rem;">아래 [수동 엑셀 데이터 분석 및 시각화 실행] 버튼을 클릭하세요.</span>`;
         }
         if (processBtn) {
             processBtn.disabled = false;
@@ -58,12 +62,12 @@ function initFileUpload() {
             processBtn.style.cursor = 'pointer';
             processBtn.classList.add('pulse-glow');
         }
-        showToast(`📄 파일 인식 완료: ${file.name}`);
+        showToast(`📄 ${window.selectedManualFiles.length}개 파일 인식 완료!`);
     }
 
     fileInput.addEventListener('change', (e) => {
         if (e.target.files.length > 0) {
-            handleFileSelected(e.target.files[0]);
+            handleFilesSelected(e.target.files);
         }
     });
 
@@ -80,14 +84,14 @@ function initFileUpload() {
         e.preventDefault();
         dropzone.style.borderColor = 'rgba(255, 255, 255, 0.15)';
         if (e.dataTransfer.files.length > 0) {
-            handleFileSelected(e.dataTransfer.files[0]);
+            handleFilesSelected(e.dataTransfer.files);
         }
     });
 
     if (processBtn) {
         processBtn.addEventListener('click', () => {
-            if (window.selectedManualFile) {
-                uploadFile(window.selectedManualFile);
+            if (window.selectedManualFiles && window.selectedManualFiles.length > 0) {
+                uploadFiles(window.selectedManualFiles);
             } else {
                 showToast(`수동 업로드할 엑셀/CSV 파일을 먼저 선택해 주세요.`, 'WARNING');
             }
@@ -95,11 +99,12 @@ function initFileUpload() {
     }
 }
 
-async function uploadFile(file) {
+async function uploadFiles(files) {
     const formData = new FormData();
-    formData.append('file', file);
+    files.forEach(f => formData.append('files', f));
+    const fileNames = files.map(f => f.name).join(', ');
 
-    showToast(`🔄 엑셀 파일 수동 데이터 분석 처리 중: ${file.name}`);
+    showToast(`🔄 ${files.length}개 파일 업로드 및 통합 분석 처리 중...`);
     try {
         const response = await fetch('/api/upload', {
             method: 'POST',
@@ -117,30 +122,35 @@ async function uploadFile(file) {
         }
 
         if (response.ok && res.success) {
-            showToast(`✅ 업로드 완료! 총 ${res.total_rows}개 데이터 가공 및 차트/표 시각화 성공.`);
-            
-            // 수동 업로드 데이터 기반 직접 시각화 렌더링
-            if (res.reports && res.series_5m) {
-                CURRENT_ANALYSIS_DATA = res;
-                const selectedOutlet = document.getElementById('outlet-select').value || '배출구 1';
-                renderMetricCards(res.reports[selectedOutlet] || {});
-                renderIntegratedChart(res.series_5m, CURRENT_PARAM);
-                renderAlarmTable(res.all_alarms || []);
-                
-                const rawOutletFilter = document.getElementById('raw-outlet-select').value || 'ALL';
-                renderRawDataTable(res.series_5m, res.all_alarms || [], rawOutletFilter);
-
-                initParamButtons();
-                initRawDataTable();
-            } else {
-                loadAnalysisData();
-            }
+            const warnMsg = res.parse_warnings && res.parse_warnings.length > 0 ? ` (주의: ${res.parse_warnings.length}개 파일 경고)` : '';
+            showToast(`✅ ${res.files_count}개 파일 업로드 완료! 총 ${res.total_rows}행 데이터 통합 분석 성공.${warnMsg}`);
+            handleUploadSuccess(res);
+            // 달력 색상 새로고침
+            fetchManualAvailableDates();
         } else {
             const errMsg = res.detail || res.message || '오류 발생';
             showToast(`업로드 실패: ${errMsg}`, 'ERROR');
         }
     } catch (err) {
         showToast(`업로드 에러: ${err.message}`, 'ERROR');
+    }
+}
+
+function handleUploadSuccess(res) {
+    if (res.reports && res.series_5m) {
+        CURRENT_ANALYSIS_DATA = res;
+        const selectedOutlet = document.getElementById('outlet-select')?.value || 'ALL';
+        renderMetricCards(res.reports[selectedOutlet] || {});
+        renderIntegratedChart(res.series_5m, CURRENT_PARAM);
+        renderAlarmTable(res.all_alarms || []);
+        
+        const rawOutletFilter = document.getElementById('raw-outlet-select')?.value || 'ALL';
+        renderRawDataTable(res.series_5m, res.all_alarms || [], rawOutletFilter);
+
+        initParamButtons();
+        initRawDataTable();
+    } else {
+        loadAnalysisData();
     }
 }
 
@@ -1578,9 +1588,52 @@ async function fetchManualAvailableDates() {
             if (historyDateInput) {
                 historyDateInput.value = data.dates[0];
             }
+            // 달력 색상 강조: 데이터 있는 날짜를 data-attribute로 표시
+            markCalendarUploadedDates(data.dates);
         }
     } catch (e) {
         console.error('5분 수동데이터 날짜 목록 조회 실패:', e);
+    }
+}
+
+function markCalendarUploadedDates(dates) {
+    // 날짜 input에 data-uploaded-dates 속성 설정 (CSS/JS 색상 구분용)
+    const historyDateInput = document.getElementById('manual-history-date');
+    if (!historyDateInput) return;
+    historyDateInput.setAttribute('data-uploaded-dates', JSON.stringify(dates));
+
+    // 날짜 입력창 옆에 업로드 날짜 목록 드롭다운 또는 레이블 표시
+    let dateBadgeContainer = document.getElementById('uploaded-dates-badge');
+    if (!dateBadgeContainer) {
+        dateBadgeContainer = document.createElement('div');
+        dateBadgeContainer.id = 'uploaded-dates-badge';
+        dateBadgeContainer.style.cssText = 'display:flex; flex-wrap:wrap; gap:5px; margin-top:8px;';
+        historyDateInput.parentElement?.parentElement?.appendChild(dateBadgeContainer);
+    }
+    dateBadgeContainer.innerHTML = '';
+    if (dates.length === 0) {
+        dateBadgeContainer.innerHTML = '<span style="font-size:0.78rem; color:#94a3b8;">백업된 날짜 없음</span>';
+        return;
+    }
+    dates.slice(0, 14).forEach(d => {
+        const chip = document.createElement('span');
+        chip.textContent = d;
+        chip.style.cssText = 'font-size:0.75rem; padding:2px 8px; background:rgba(16,185,129,0.18); color:var(--accent-emerald); border:1px solid rgba(16,185,129,0.35); border-radius:20px; cursor:pointer; transition:background 0.2s;';
+        chip.title = `${d} 이력 데이터 로드`;
+        chip.addEventListener('click', () => {
+            const historyDateInput = document.getElementById('manual-history-date');
+            if (historyDateInput) historyDateInput.value = d;
+            loadManualHistory(d);
+        });
+        chip.addEventListener('mouseover', () => { chip.style.background = 'rgba(16,185,129,0.35)'; });
+        chip.addEventListener('mouseout', () => { chip.style.background = 'rgba(16,185,129,0.18)'; });
+        dateBadgeContainer.appendChild(chip);
+    });
+    if (dates.length > 14) {
+        const moreSpan = document.createElement('span');
+        moreSpan.textContent = `+${dates.length - 14}일 더 있음`;
+        moreSpan.style.cssText = 'font-size:0.75rem; color:#94a3b8; padding:2px 6px;';
+        dateBadgeContainer.appendChild(moreSpan);
     }
 }
 
@@ -1598,6 +1651,61 @@ async function loadManualHistory(dateStr) {
         handleUploadSuccess(data);
         showToast(`✅ [${dateStr}] 5분 수동데이터 (${data.total_rows || 0}건) 로드 완료!`);
     } catch (e) {
-        showToast(`수동이력 로드 실패: ${e.message}`, 'CRITICAL');
+        showToast(`수동이력 로드 실패: ${e.message}`, 'ERROR');
     }
+}
+
+// Telegram Connection Test (즉시 실제 발송 테스트)
+function initTelegramTest() {
+    const btn = document.getElementById('btn-telegram-test');
+    if (!btn) return;
+    btn.addEventListener('click', async () => {
+        const bot_token = document.getElementById('bot-token')?.value.trim();
+        const chat_id = document.getElementById('chat-id')?.value.trim();
+        const resultDiv = document.getElementById('telegram-test-result');
+
+        if (!bot_token) {
+            showToast('Bot Token을 먼저 입력해주세요.', 'WARNING');
+            return;
+        }
+        if (!chat_id) {
+            showToast('Chat ID를 먼저 입력해주세요.', 'WARNING');
+            return;
+        }
+
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 발송 중...';
+        if (resultDiv) resultDiv.style.display = 'none';
+
+        try {
+            const res = await fetch('/api/telegram/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bot_token, chat_id })
+            });
+            const data = await res.json();
+
+            if (resultDiv) {
+                resultDiv.style.display = 'block';
+                if (data.success) {
+                    resultDiv.innerHTML = `<div style="padding:10px 14px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.35); border-radius:8px; color:var(--accent-emerald); font-size:0.88rem;"><i class="fa-solid fa-circle-check"></i> ${data.message}<br><small style="color:#94a3b8;">메시지 ID: ${data.message_id || '-'}</small></div>`;
+                    showToast('✅ 텔레그램 테스트 메시지 발송 성공!');
+                    loadLogs();
+                } else {
+                    const errText = (data.error || '알 수 없는 오류').replace(/\n/g, '<br>');
+                    resultDiv.innerHTML = `<div style="padding:10px 14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:8px; color:#fca5a5; font-size:0.85rem;"><i class="fa-solid fa-triangle-exclamation"></i> 발송 실패<br><br>${errText}<br><br><strong style="color:#94a3b8; font-size:0.8rem;">💡 도움말:</strong><br><span style="color:#94a3b8; font-size:0.8rem;">• Chat ID 확인: 텔레그램에서 <code>@userinfobot</code>에 메시지 전송<br>• Bot 활성화: 봇을 찾아 <code>/start</code> 명령 전송 필요<br>• Token 재확인: @BotFather에서 발급받은 정확한 Token 사용</span></div>`;
+                    showToast(`❌ 텔레그램 발송 실패: ${data.error || '오류'}`, 'ERROR');
+                }
+            }
+        } catch (err) {
+            if (resultDiv) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<div style="padding:10px 14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:8px; color:#fca5a5; font-size:0.85rem;"><i class="fa-solid fa-circle-xmark"></i> 통신 오류: ${err.message}</div>`;
+            }
+            showToast(`통신 오류: ${err.message}`, 'ERROR');
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 연결 테스트 발송';
+        }
+    });
 }

@@ -69,9 +69,9 @@
                                 <i class="fa-solid fa-cloud-arrow-up"></i>
                                 <div class="dropzone-text">
                                     <strong>CleanSYS 24시간 5분 이력 엑셀 수동 업로드 (.csv, .xlsx, .xls)</strong>
-                                    <span>드래그 앤 드롭 또는 클릭하여 사업장 전용 포털 다운로드 엑셀 파일 선택</span>
+                                    <span>배출구별 <strong style="color:var(--accent-cyan);">여러 파일을 동시 선택</strong> 또는 드래그 앤 드롭 — 날짜·배출구 자동 분류 처리</span>
                                 </div>
-                                <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" hidden>
+                                <input type="file" id="file-upload" accept=".csv, .xlsx, .xls" multiple hidden>
                             </label>
                         </div>
 
@@ -449,6 +449,20 @@
                                 </div>
                             </div>
                         </form>
+
+                        <!-- Telegram Connection Test Button -->
+                        <div style="margin-top: 16px; padding: 14px; background: rgba(6,182,212,0.07); border: 1px solid rgba(6,182,212,0.2); border-radius: 10px;">
+                            <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                                <div>
+                                    <h4 style="margin:0 0 4px; font-size:0.95rem; color:var(--accent-cyan);"><i class="fa-solid fa-wifi"></i> 텔레그램 연결 테스트</h4>
+                                    <p style="margin:0; font-size:0.82rem; color:var(--text-secondary);">입력한 Bot Token과 Chat ID로 실제 테스트 메시지를 즉시 발송합니다.</p>
+                                </div>
+                                <button id="btn-telegram-test" class="btn btn-secondary btn-sm" style="margin-left:auto;">
+                                    <i class="fa-solid fa-paper-plane"></i> 연결 테스트 발송
+                                </button>
+                            </div>
+                            <div id="telegram-test-result" style="margin-top:10px; display:none;"></div>
+                        </div>
                     </div>
 
                     <!-- Template & Simulation Card -->
@@ -521,6 +535,6 @@
     </div>
 
     <!-- Custom Script -->
-    <script src="/static/js/app.js?v=20260805_v3"></script>
+    <script src="/static/js/app.js?v=20260820_v5"></script>
 </body>
 </html>

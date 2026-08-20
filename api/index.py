@@ -93,11 +93,22 @@ def sanitize_for_json(obj):
     return str(obj)
 
 @app.post("/api/upload")
-async def upload_file(file: UploadFile = File(...)):
+async def upload_file(files: List[UploadFile] = File(...)):
     """
     공단 Raw Data CSV/Excel 수동 업로드 및 가공
     """
-    try:
+    """
+    공단 Raw Data CSV/Excel 다중 파일 수동 업로드 및 가공 (배출구별 여러 파일 동시 처리)
+    """
+    if not files:
+        return JSONResponse(status_code=400, content={"success": False, "detail": "업로드할 파일을 선택해주세요."})
+
+    all_dfs = []
+    all_filenames = []
+    parse_errors = []
+
+    for file in files:
+      try:
         contents = await file.read()
         filename = file.filename.lower()
         
@@ -374,55 +385,90 @@ async def upload_file(file: UploadFile = File(...)):
                     row_dict[k] = v
             series_records.append(row_dict)
 
-        global UPLOADED_DATA
-        UPLOADED_DATA["latest"] = df
-        UPLOADED_DATA["latest_5m"] = df
-
-        outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
-        reports = {}
-        all_alarms = []
-
-        for out in outlets:
-            out_df = df[df["outlet"] == out] if "outlet" in df.columns else pd.DataFrame()
-            rep = analyzer.generate_daily_report(out_df, out, "수동 엑셀 파일")
-            reports[out] = rep
-            if rep.get("raw_alarms"):
-                all_alarms.extend(rep["raw_alarms"])
-
-        # 구글 시트 동일 파일 내 '5m_YYYY-MM-DD' 탭 및 로컬 캐시에 백업 저장
-        try:
-            storage.save_manual_5m_data(df)
-        except Exception as e:
-            print(f"[UploadSaveError] 구글시트 5분 백업 저장 실패: {e}")
-
-        # 30분 자동 수집 데이터 읽어와 5분 vs 30분 비교 검증 수행
-        query_date = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-        if not df.empty and "timestamp" in df.columns:
-            ts_sample = str(df["timestamp"].iloc[0])
-            digits = "".join(filter(str.isdigit, ts_sample))
-            if len(digits) >= 8:
-                query_date = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
-
-        df_30m_auto = storage.read_telemetry_data(query_date)
-        validation_res = analyzer.validate_5m_against_30m(df, df_30m_auto, "ALL")
-
-        res_payload = {
-            "success": True,
-            "filename": file.filename,
-            "total_rows": len(df),
-            "detected_outlets": [str(o) for o in outlets],
-            "outlets": outlets,
-            "reports": reports,
-            "all_alarms": all_alarms,
-            "series_5m": series_records,
-            "validation": validation_res
-        }
-        return JSONResponse(status_code=200, content=sanitize_for_json(res_payload))
-    except Exception as e:
+        all_dfs.append(df)
+        all_filenames.append(file.filename)
+        print(f"[MultiUpload] 파일 {file.filename} 파싱 완료: {len(df)}행")
+      except Exception as e:
         import traceback
-        err_msg = f"파일 처리 중 오류: {str(e)}"
-        print(f"[UploadError] {err_msg}\n{traceback.format_exc()}")
-        return JSONResponse(status_code=500, content={"success": False, "detail": err_msg, "message": err_msg})
+        err_msg = f"파일 [{file.filename}] 처리 오류: {str(e)}"
+        print(f"[MultiUploadError] {err_msg}\n{traceback.format_exc()}")
+        parse_errors.append(err_msg)
+
+    if not all_dfs:
+        return JSONResponse(status_code=400, content={"success": False, "detail": f"업로드된 모든 파일 파싱 실패: {'; '.join(parse_errors)}"})
+
+    # 모든 파일 DataFrame 통합 (중복 제거, 정렬)
+    try:
+        df = pd.concat(all_dfs, ignore_index=True)
+        df["timestamp"] = df["timestamp"].astype(str)
+        df["outlet"] = df["outlet"].astype(str)
+        df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+        df.sort_values(by=["timestamp", "outlet"], inplace=True)
+        df.reset_index(drop=True, inplace=True)
+    except Exception as e:
+        return JSONResponse(status_code=500, content={"success": False, "detail": f"파일 통합 오류: {str(e)}"})
+
+    global UPLOADED_DATA
+    UPLOADED_DATA["latest"] = df
+    UPLOADED_DATA["latest_5m"] = df
+
+    outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+    reports = {}
+    all_alarms = []
+
+    for out in outlets:
+        out_df = df[df["outlet"] == out] if "outlet" in df.columns else pd.DataFrame()
+        rep = analyzer.generate_daily_report(out_df, out, "수동 엑셀 파일")
+        reports[out] = rep
+        if rep.get("raw_alarms"):
+            all_alarms.extend(rep["raw_alarms"])
+
+    # 구글 시트 동일 파일 내 '5m_YYYY-MM-DD' 탭 및 로컬 캐시에 백업 저장
+    try:
+        storage.save_manual_5m_data(df)
+    except Exception as e:
+        print(f"[UploadSaveError] 구글시트 5분 백업 저장 실패: {e}")
+
+    # 30분 자동 수집 데이터 읽어와 5분 vs 30분 비교 검증 수행
+    query_date = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+    if not df.empty and "timestamp" in df.columns:
+        ts_sample = str(df["timestamp"].iloc[0])
+        digits = "".join(filter(str.isdigit, ts_sample))
+        if len(digits) >= 8:
+            query_date = f"{digits[:4]}-{digits[4:6]}-{digits[6:8]}"
+
+    df_30m_auto = storage.read_telemetry_data(query_date)
+    validation_res = analyzer.validate_5m_against_30m(df, df_30m_auto, "ALL")
+
+    series_records = []
+    for r in df.to_dict(orient="records"):
+        row_dict = {}
+        for k, v in r.items():
+            if isinstance(v, float) and (pd.isna(v)):
+                row_dict[k] = 0.0 if k in config.FACTORS else ""
+            elif hasattr(v, "strftime"):
+                row_dict[k] = v.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                row_dict[k] = v
+        series_records.append(row_dict)
+
+    # 감지된 배출구 (실제로 데이터 있는 배출구만)
+    detected_outlets = sorted(df["outlet"].unique().tolist()) if "outlet" in df.columns else []
+
+    res_payload = {
+        "success": True,
+        "filenames": all_filenames,
+        "files_count": len(all_filenames),
+        "parse_warnings": parse_errors,
+        "total_rows": len(df),
+        "detected_outlets": detected_outlets,
+        "outlets": outlets,
+        "reports": reports,
+        "all_alarms": all_alarms,
+        "series_5m": series_records,
+        "validation": validation_res
+    }
+    return JSONResponse(status_code=200, content=sanitize_for_json(res_payload))
 
 @app.get("/api/analysis/manual/dates")
 def get_manual_dates():
@@ -823,3 +869,78 @@ def get_logs(limit: int = 50):
         "success": True,
         "logs": logs
     }
+
+@app.post("/api/telegram/test")
+def test_telegram(payload: Dict[str, Any]):
+    """
+    [텔레그램 연결 테스트 발송 API]
+    - bot_token, chat_id로 즉시 실제 테스트 메시지 발송
+    - 성공/실패 상세 메시지 반환
+    """
+    bot_token = payload.get("bot_token", "").strip()
+    chat_id = payload.get("chat_id", "").strip()
+    message = payload.get("message", "")
+
+    if not bot_token:
+        return {"success": False, "error": "Bot Token이 입력되지 않았습니다.", "is_mock": True}
+    if not chat_id:
+        return {"success": False, "error": "Chat ID가 입력되지 않았습니다.", "is_mock": True}
+    if not message:
+        now_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S")
+        message = f"""🔔 <b>[삼척빛드림본부 TMS 모니터링]</b>
+        
+📡 텔레그램 알림 연결 <b>테스트 메시지</b>입니다.
+⏰ 발송 시각: {now_str}
+✅ 이 메시지가 수신되면 텔레그램 봇이 정상적으로 설정된 것입니다!
+
+<i>시스템 관리자: 삼척빛드림본부 환경팀</i>"""
+
+    import requests as req_lib
+    url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+    req_payload = {
+        "chat_id": chat_id,
+        "text": message,
+        "parse_mode": "HTML"
+    }
+
+    try:
+        response = req_lib.post(url, json=req_payload, timeout=10)
+        res_json = response.json()
+
+        if response.status_code == 200 and res_json.get("ok"):
+            storage.add_log("INFO", "TELEGRAM_TEST_SEND", f"테스트 발송 성공 → chat_id: {chat_id}", status="SUCCESS")
+            return {
+                "success": True,
+                "is_mock": False,
+                "message": "✅ 텔레그램 테스트 메시지 발송 성공! 텔레그램 앱을 확인해 주세요.",
+                "message_id": res_json.get("result", {}).get("message_id")
+            }
+        else:
+            err_desc = res_json.get("description", "알 수 없는 텔레그램 API 오류")
+            err_code = res_json.get("error_code", "")
+            storage.add_log("ERROR", "TELEGRAM_TEST_FAIL", f"오류 코드 {err_code}: {err_desc}", status="FAILED")
+            
+            # 친절한 오류 해석
+            friendly_msg = err_desc
+            if err_code == 401 or "Unauthorized" in err_desc:
+                friendly_msg = f"❌ Bot Token이 유효하지 않습니다. (오류: {err_desc})\n→ @BotFather에서 발급받은 정확한 Token을 입력해주세요."
+            elif err_code == 400 and "chat not found" in err_desc.lower():
+                friendly_msg = f"❌ Chat ID를 찾을 수 없습니다. (오류: {err_desc})\n→ @userinfobot 또는 /getUpdates API로 정확한 Chat ID를 확인해주세요."
+            elif "blocked" in err_desc.lower():
+                friendly_msg = f"❌ 봇이 차단되어 있습니다.\n→ 텔레그램에서 봇을 찾아 대화를 시작(Start)해주세요."
+            
+            return {
+                "success": False,
+                "is_mock": False,
+                "error": friendly_msg,
+                "raw_error": err_desc,
+                "error_code": err_code
+            }
+    except Exception as e:
+        err_str = str(e)
+        storage.add_log("ERROR", "TELEGRAM_TEST_EXCEPTION", f"네트워크 오류: {err_str}", status="FAILED")
+        return {
+            "success": False,
+            "is_mock": False,
+            "error": f"네트워크 통신 오류: {err_str}\n→ 인터넷 연결 및 Bot Token을 확인해주세요."
+        }
