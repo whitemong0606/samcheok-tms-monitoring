@@ -66,13 +66,6 @@ class GoogleSheetsStorage:
             with open(self.fallback_file, "w", encoding="utf-8") as f:
                 json.dump(initial_data, f, ensure_ascii=False, indent=2)
 
-    def read_telemetry_data(self, query_date_str: str) -> Optional[pd.DataFrame]:
-        """
-        [구글 시트 타임스탬프 기반 데이터 로드 로직]
-        조회일(query_date_str, 예: 2026-08-18) 기준:
-        - 당일 탭(2026-08-18)의 모든 실시간 실측 데이터 로드 (00:00:00 ~ 23:59:59)
-        - 24시간 연속 차트 구성을 위해 전일 탭(2026-08-17) 08:00 이후 데이터 함께 보충
-        """
     def normalize_telemetry_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         구글 시트/로컬 캐시에서 어떤 헤더 텍스트(한글/영문/대소문자/공백)로 읽어오더라도

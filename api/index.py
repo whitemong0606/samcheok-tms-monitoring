@@ -793,6 +793,7 @@ def get_auto_analysis_data(
         )
 
 @app.get("/api/cron/daily-report")
+@app.get("/api/cron/fetch-30m")
 def cron_daily_report():
     """
     하루 1회 자동 실행 CRON 스케줄러 (매일 08:00 KST)
