@@ -9,7 +9,6 @@ document.addEventListener('DOMContentLoaded', () => {
     initDatePickers();
     initOutletSelector();
     initSettings();
-    initTelegramTest();
     initSimulation();
     initLogs();
     
@@ -992,6 +991,10 @@ async function loadSettings() {
 
 async function saveSettings(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
+
+    const btn = document.getElementById('btn-save-settings');
+    const resultDiv = document.getElementById('settings-save-result');
+
     const payload = {
         bot_token: document.getElementById('bot-token').value.trim(),
         chat_id: document.getElementById('chat-id').value.trim(),
@@ -1005,7 +1008,10 @@ async function saveSettings(e) {
         }
     };
 
-    showToast("⚙️ Bot 설정 및 기준치 구글 시트 저장 중...");
+    // 버튼 로딩 상태
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 저장 중...'; }
+    if (resultDiv) resultDiv.style.display = 'none';
+
     try {
         const res = await fetch('/api/settings', {
             method: 'POST',
@@ -1013,14 +1019,30 @@ async function saveSettings(e) {
             body: JSON.stringify(payload)
         });
         const data = await res.json();
+
         if (data.success) {
-            showToast("✅ Bot 설정 및 기준치가 구글 시트에 성공적으로 저장되었습니다!");
+            if (resultDiv) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> 설정이 성공적으로 저장되었습니다!</div>`;
+            }
+            showToast('✅ Bot 설정 및 기준치가 저장되었습니다!');
             loadSettings();
         } else {
-            showToast(`저장 실패: ${data.message || '오류 발생'}`, 'ERROR');
+            const msg = data.message || '저장 실패';
+            if (resultDiv) {
+                resultDiv.style.display = 'block';
+                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.87rem;"><i class="fa-solid fa-triangle-exclamation"></i> 저장 실패: ${msg}</div>`;
+            }
+            showToast(`저장 실패: ${msg}`, 'ERROR');
         }
     } catch (err) {
+        if (resultDiv) {
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.87rem;"><i class="fa-solid fa-circle-xmark"></i> 네트워크 오류: ${err.message}</div>`;
+        }
         showToast(`저장 오류: ${err.message}`, 'ERROR');
+    } finally {
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장'; }
     }
 }
 
@@ -1557,17 +1579,11 @@ function renderAutoRawDataTable(series, alarms) {
 }
 
 function initManualHistoryControls() {
-    const historyDateInput = document.getElementById('manual-history-date');
     const loadHistoryBtn = document.getElementById('btn-load-manual-history');
 
-    if (historyDateInput) {
-        const today = new Date().toISOString().substring(0, 10);
-        historyDateInput.value = today;
-    }
-
     if (loadHistoryBtn) {
-        loadHistoryBtn.addEventListener('click', async () => {
-            const selectedDate = historyDateInput?.value;
+        loadHistoryBtn.addEventListener('click', () => {
+            const selectedDate = document.getElementById('manual-history-date')?.value;
             if (!selectedDate) {
                 showToast('조회할 날짜를 선택해주세요.', 'WARNING');
                 return;
@@ -1576,6 +1592,7 @@ function initManualHistoryControls() {
         });
     }
 
+    // flatpickr는 fetchManualAvailableDates 완료 후 초기화 (업로드 날짜 로드 후)
     fetchManualAvailableDates();
 }
 
@@ -1583,58 +1600,47 @@ async function fetchManualAvailableDates() {
     try {
         const res = await fetch('/api/analysis/manual/dates');
         const data = await res.json();
-        if (data.success && data.dates && data.dates.length > 0) {
-            const historyDateInput = document.getElementById('manual-history-date');
-            if (historyDateInput) {
-                historyDateInput.value = data.dates[0];
-            }
-            // 달력 색상 강조: 데이터 있는 날짜를 data-attribute로 표시
-            markCalendarUploadedDates(data.dates);
-        }
+        const dates = (data.success && data.dates) ? data.dates : [];
+        initFlatpickrCalendar(dates);
     } catch (e) {
         console.error('5분 수동데이터 날짜 목록 조회 실패:', e);
+        initFlatpickrCalendar([]);
     }
 }
 
-function markCalendarUploadedDates(dates) {
-    // 날짜 input에 data-uploaded-dates 속성 설정 (CSS/JS 색상 구분용)
-    const historyDateInput = document.getElementById('manual-history-date');
-    if (!historyDateInput) return;
-    historyDateInput.setAttribute('data-uploaded-dates', JSON.stringify(dates));
+// flatpickr 인스턴스 전역
+let _manualHistoryPicker = null;
 
-    // 날짜 입력창 옆에 업로드 날짜 목록 드롭다운 또는 레이블 표시
-    let dateBadgeContainer = document.getElementById('uploaded-dates-badge');
-    if (!dateBadgeContainer) {
-        dateBadgeContainer = document.createElement('div');
-        dateBadgeContainer.id = 'uploaded-dates-badge';
-        dateBadgeContainer.style.cssText = 'display:flex; flex-wrap:wrap; gap:5px; margin-top:8px;';
-        historyDateInput.parentElement?.parentElement?.appendChild(dateBadgeContainer);
+function initFlatpickrCalendar(uploadedDates) {
+    const inputEl = document.getElementById('manual-history-date');
+    if (!inputEl || typeof flatpickr === 'undefined') return;
+
+    const uploadedSet = new Set(uploadedDates);
+
+    // 기존 인스턴스 파기 후 재생성
+    if (_manualHistoryPicker) {
+        _manualHistoryPicker.destroy();
     }
-    dateBadgeContainer.innerHTML = '';
-    if (dates.length === 0) {
-        dateBadgeContainer.innerHTML = '<span style="font-size:0.78rem; color:#94a3b8;">백업된 날짜 없음</span>';
-        return;
-    }
-    dates.slice(0, 14).forEach(d => {
-        const chip = document.createElement('span');
-        chip.textContent = d;
-        chip.style.cssText = 'font-size:0.75rem; padding:2px 8px; background:rgba(16,185,129,0.18); color:var(--accent-emerald); border:1px solid rgba(16,185,129,0.35); border-radius:20px; cursor:pointer; transition:background 0.2s;';
-        chip.title = `${d} 이력 데이터 로드`;
-        chip.addEventListener('click', () => {
-            const historyDateInput = document.getElementById('manual-history-date');
-            if (historyDateInput) historyDateInput.value = d;
-            loadManualHistory(d);
-        });
-        chip.addEventListener('mouseover', () => { chip.style.background = 'rgba(16,185,129,0.35)'; });
-        chip.addEventListener('mouseout', () => { chip.style.background = 'rgba(16,185,129,0.18)'; });
-        dateBadgeContainer.appendChild(chip);
+
+    _manualHistoryPicker = flatpickr(inputEl, {
+        locale: window.flatpickr?.l10ns?.ko || 'default',
+        dateFormat: 'Y-m-d',
+        defaultDate: uploadedDates.length > 0 ? uploadedDates[0] : null,
+        disableMobile: true,
+        onDayCreate: function(dObj, dStr, fp, dayElem) {
+            // 업로드된 날짜에 초록 점(하이라이트) 표시
+            const dateStr = flatpickr.formatDate(dayElem.dateObj, 'Y-m-d');
+            if (uploadedSet.has(dateStr)) {
+                dayElem.style.position = 'relative';
+                dayElem.style.fontWeight = '700';
+                dayElem.style.color = '#10b981';
+                // 아래 초록 점 추가
+                const dot = document.createElement('span');
+                dot.style.cssText = 'position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:5px;height:5px;background:#10b981;border-radius:50%;display:block;';
+                dayElem.appendChild(dot);
+            }
+        }
     });
-    if (dates.length > 14) {
-        const moreSpan = document.createElement('span');
-        moreSpan.textContent = `+${dates.length - 14}일 더 있음`;
-        moreSpan.style.cssText = 'font-size:0.75rem; color:#94a3b8; padding:2px 6px;';
-        dateBadgeContainer.appendChild(moreSpan);
-    }
 }
 
 async function loadManualHistory(dateStr) {
@@ -1653,59 +1659,4 @@ async function loadManualHistory(dateStr) {
     } catch (e) {
         showToast(`수동이력 로드 실패: ${e.message}`, 'ERROR');
     }
-}
-
-// Telegram Connection Test (즉시 실제 발송 테스트)
-function initTelegramTest() {
-    const btn = document.getElementById('btn-telegram-test');
-    if (!btn) return;
-    btn.addEventListener('click', async () => {
-        const bot_token = document.getElementById('bot-token')?.value.trim();
-        const chat_id = document.getElementById('chat-id')?.value.trim();
-        const resultDiv = document.getElementById('telegram-test-result');
-
-        if (!bot_token) {
-            showToast('Bot Token을 먼저 입력해주세요.', 'WARNING');
-            return;
-        }
-        if (!chat_id) {
-            showToast('Chat ID를 먼저 입력해주세요.', 'WARNING');
-            return;
-        }
-
-        btn.disabled = true;
-        btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 발송 중...';
-        if (resultDiv) resultDiv.style.display = 'none';
-
-        try {
-            const res = await fetch('/api/telegram/test', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bot_token, chat_id })
-            });
-            const data = await res.json();
-
-            if (resultDiv) {
-                resultDiv.style.display = 'block';
-                if (data.success) {
-                    resultDiv.innerHTML = `<div style="padding:10px 14px; background:rgba(16,185,129,0.15); border:1px solid rgba(16,185,129,0.35); border-radius:8px; color:var(--accent-emerald); font-size:0.88rem;"><i class="fa-solid fa-circle-check"></i> ${data.message}<br><small style="color:#94a3b8;">메시지 ID: ${data.message_id || '-'}</small></div>`;
-                    showToast('✅ 텔레그램 테스트 메시지 발송 성공!');
-                    loadLogs();
-                } else {
-                    const errText = (data.error || '알 수 없는 오류').replace(/\n/g, '<br>');
-                    resultDiv.innerHTML = `<div style="padding:10px 14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:8px; color:#fca5a5; font-size:0.85rem;"><i class="fa-solid fa-triangle-exclamation"></i> 발송 실패<br><br>${errText}<br><br><strong style="color:#94a3b8; font-size:0.8rem;">💡 도움말:</strong><br><span style="color:#94a3b8; font-size:0.8rem;">• Chat ID 확인: 텔레그램에서 <code>@userinfobot</code>에 메시지 전송<br>• Bot 활성화: 봇을 찾아 <code>/start</code> 명령 전송 필요<br>• Token 재확인: @BotFather에서 발급받은 정확한 Token 사용</span></div>`;
-                    showToast(`❌ 텔레그램 발송 실패: ${data.error || '오류'}`, 'ERROR');
-                }
-            }
-        } catch (err) {
-            if (resultDiv) {
-                resultDiv.style.display = 'block';
-                resultDiv.innerHTML = `<div style="padding:10px 14px; background:rgba(239,68,68,0.12); border:1px solid rgba(239,68,68,0.3); border-radius:8px; color:#fca5a5; font-size:0.85rem;"><i class="fa-solid fa-circle-xmark"></i> 통신 오류: ${err.message}</div>`;
-            }
-            showToast(`통신 오류: ${err.message}`, 'ERROR');
-        } finally {
-            btn.disabled = false;
-            btn.innerHTML = '<i class="fa-solid fa-paper-plane"></i> 연결 테스트 발송';
-        }
-    });
 }
