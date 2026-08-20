@@ -306,8 +306,13 @@ class StackAnalyzer:
                 averages[factor] = 0.00
 
         alarm_msgs = []
-        for a in alarms:
-            alarm_msgs.append(f"• [{a.timestamp[-5:]}] {a.factor}: {a.message}")
+        max_show = 6
+        for a in alarms[:max_show]:
+            ts_str = str(a.timestamp)
+            time_part = ts_str[-8:] if len(ts_str) >= 8 else ts_str
+            alarm_msgs.append(f"• [{time_part}] {a.factor}: {a.message}")
+        if len(alarms) > max_show:
+            alarm_msgs.append(f"• ... 외 {len(alarms) - max_show}건의 이상 징후 추가 감지")
             
         alarm_text = "\n".join(alarm_msgs) if alarm_msgs else "• 특이사항 없음 (모든 인자 정상 범위)"
         

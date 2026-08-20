@@ -28,6 +28,9 @@ class TelegramBot:
                 "message": "텔레그램 Token/Chat ID가 설정되지 않아 가상 발송으로 성공 처리되었습니다."
             }
 
+        if len(text) > 4000:
+            text = text[:3900] + "\n\n... (메시지 길이 제한으로 이하 내용 생략)"
+
         url = f"https://api.telegram.org/bot{token}/sendMessage"
         payload = {
             "chat_id": cid,
@@ -61,6 +64,18 @@ class TelegramBot:
 
         # 템플릿 태그 안전 치환
         formatted_text = template_str
+        alarm_summary = report_data.get("alarm_summary")
+        if not alarm_summary:
+            raw_alarms = report_data.get("alarms", [])
+            if isinstance(raw_alarms, list) and raw_alarms:
+                max_show = 6
+                msgs = [f"• {a.get('factor', '')}: {a.get('message', '')}" if isinstance(a, dict) else f"• {a}" for a in raw_alarms[:max_show]]
+                if len(raw_alarms) > max_show:
+                    msgs.append(f"• ... 외 {len(raw_alarms) - max_show}건 추가 감지")
+                alarm_summary = "\n".join(msgs)
+            else:
+                alarm_summary = "• 특이사항 없음 (모든 인자 정상 범위)"
+
         replacements = {
             "{date}": str(report_data.get("date", "")),
             "{outlet}": str(report_data.get("outlet", "")),
@@ -74,7 +89,7 @@ class TelegramBot:
             "{avg_flow}": str(report_data.get("avg_flow", "0")),
             "{avg_temp}": str(report_data.get("avg_temp", "0")),
             "{alarm_count}": str(report_data.get("alarm_count", "0")),
-            "{alarms}": str(report_data.get("alarms", ""))
+            "{alarms}": str(alarm_summary)
         }
 
         for key, val in replacements.items():
