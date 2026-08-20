@@ -2,13 +2,18 @@ import os
 import sys
 import io
 
-# Vercel Serverless Function 환경에서 core 모듈 경로 인식 보장
-current_dir = os.path.dirname(os.path.abspath(__file__))
-parent_dir = os.path.dirname(current_dir)
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
-if current_dir not in sys.path:
-    sys.path.insert(0, current_dir)
+# Vercel Serverless Function 환경에서 경로 안전 초기화 (__file__ 미정의 에러 방지)
+file_path = globals().get("__file__")
+if file_path:
+    current_dir = os.path.dirname(os.path.abspath(file_path))
+    parent_dir = os.path.dirname(current_dir)
+else:
+    current_dir = os.path.abspath(os.getcwd())
+    parent_dir = current_dir
+
+for p in [parent_dir, current_dir, os.getcwd()]:
+    if p and p not in sys.path:
+        sys.path.insert(0, p)
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, Form
 from fastapi.staticfiles import StaticFiles
@@ -43,7 +48,7 @@ app.add_middleware(
 )
 
 # Static Files 디렉토리 설정
-static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
+static_dir = os.path.join(parent_dir, "static") if parent_dir else os.path.join(os.getcwd(), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
@@ -54,27 +59,24 @@ UPLOADED_DATA: Dict[str, pd.DataFrame] = {}
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    possible_paths = [
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "static", "index.html"),
-        os.path.join(os.path.dirname(os.path.dirname(__file__)), "index.html"),
-        os.path.join(os.getcwd(), "static", "index.html"),
-        os.path.join(os.getcwd(), "index.html"),
-        os.path.join(static_dir, "index.html")
-    ]
-    for p in possible_paths:
-        if os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f:
-                content = f.read()
-                if "subpane-auto" in content:
-                    return HTMLResponse(content=content, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
-    
-    # Fallback if specific file path read
-    for p in possible_paths:
-        if os.path.exists(p):
-            with open(p, "r", encoding="utf-8") as f:
-                return HTMLResponse(content=f.read(), headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
-                
-    return HTMLResponse("<h2>굴뚝 배출가스 감시 시스템 API가 정상 실행 중입니다.</h2>")
+    try:
+        possible_paths = [
+            os.path.join(parent_dir, "static", "index.html"),
+            os.path.join(parent_dir, "index.html"),
+            os.path.join(current_dir, "static", "index.html"),
+            os.path.join(current_dir, "index.html"),
+            os.path.join(os.getcwd(), "static", "index.html"),
+            os.path.join(os.getcwd(), "index.html")
+        ]
+        for p in possible_paths:
+            if os.path.exists(p):
+                with open(p, "r", encoding="utf-8") as f:
+                    content = f.read()
+                    if content and len(content) > 100:
+                        return HTMLResponse(content=content, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
+    except Exception as e:
+        print(f"Root read error: {e}")
+    return HTMLResponse("<h2>굴뚝 배출가스 감시 시스템이 정상 작동 중입니다.</h2>")
 
 @app.get("/api/health")
 def health_check():
