@@ -1,21 +1,25 @@
 let stackChart = null;
 
 document.addEventListener('DOMContentLoaded', () => {
-    initTabs();
-    initSubTabs();
-    initFileUpload();
-    initManualHistoryControls();
-    initCleanSysAPI();
-    initDatePickers();
-    initOutletSelector();
-    initSettings();
-    initSimulation();
-    initLogs();
+    const safeInit = (fn, name) => {
+        try { fn(); } catch (err) { console.warn(`[InitWarning] ${name} 초기화 중 오류:`, err); }
+    };
+
+    safeInit(initTabs, 'initTabs');
+    safeInit(initSubTabs, 'initSubTabs');
+    safeInit(initFileUpload, 'initFileUpload');
+    safeInit(initManualHistoryControls, 'initManualHistoryControls');
+    safeInit(initCleanSysAPI, 'initCleanSysAPI');
+    safeInit(initDatePickers, 'initDatePickers');
+    safeInit(initOutletSelector, 'initOutletSelector');
+    safeInit(initSettings, 'initSettings');
+    safeInit(initSimulation, 'initSimulation');
+    safeInit(initLogs, 'initLogs');
     
     // 최초 데이터 로드
-    loadAnalysisData();
-    loadSettings();
-    loadLogs();
+    safeInit(loadAnalysisData, 'loadAnalysisData');
+    safeInit(loadSettings, 'loadSettings');
+    safeInit(loadLogs, 'loadLogs');
 });
 
 // 1. Tab Navigation
@@ -958,7 +962,11 @@ function renderAlarmTable(alarms) {
 
 // 6. Settings & Template
 function initSettings() {
-    document.getElementById('btn-save-settings').addEventListener('click', saveSettings);
+    const btnSave = document.getElementById('btn-save-settings');
+    if (btnSave) {
+        btnSave.onclick = saveSettings;
+        btnSave.addEventListener('click', saveSettings);
+    }
 }
 
 async function loadSettings() {
@@ -968,20 +976,20 @@ async function loadSettings() {
         
         if (data.success && data.settings) {
             const s = data.settings;
-            document.getElementById('bot-token').value = s.bot_token || '';
-            document.getElementById('chat-id').value = s.chat_id || '';
-            document.getElementById('google-sheet-id').value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
-            document.getElementById('report-time').value = s.report_time || '08:30';
-            document.getElementById('template-text').value = s.template || '';
+            if (document.getElementById('bot-token')) document.getElementById('bot-token').value = s.bot_token || '';
+            if (document.getElementById('chat-id')) document.getElementById('chat-id').value = s.chat_id || '';
+            if (document.getElementById('google-sheet-id')) document.getElementById('google-sheet-id').value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
+            if (document.getElementById('report-time')) document.getElementById('report-time').value = s.report_time || '08:30';
+            if (document.getElementById('template-text')) document.getElementById('template-text').value = s.template || '';
 
             if (s.limits) {
-                document.getElementById('limit-val-tsp').value = s.limits.TSP || 15.0;
-                document.getElementById('limit-val-nox').value = s.limits.NOX || 50.0;
-                document.getElementById('limit-val-sox').value = s.limits.SOX || 50.0;
+                if (document.getElementById('limit-val-tsp')) document.getElementById('limit-val-tsp').value = s.limits.TSP || 15.0;
+                if (document.getElementById('limit-val-nox')) document.getElementById('limit-val-nox').value = s.limits.NOX || 50.0;
+                if (document.getElementById('limit-val-sox')) document.getElementById('limit-val-sox').value = s.limits.SOX || 50.0;
                 
-                document.getElementById('limit-tsp').textContent = s.limits.TSP || 15.0;
-                document.getElementById('limit-nox').textContent = s.limits.NOX || 50.0;
-                document.getElementById('limit-sox').textContent = s.limits.SOX || 50.0;
+                if (document.getElementById('limit-tsp')) document.getElementById('limit-tsp').textContent = s.limits.TSP || 15.0;
+                if (document.getElementById('limit-nox')) document.getElementById('limit-nox').textContent = s.limits.NOX || 50.0;
+                if (document.getElementById('limit-sox')) document.getElementById('limit-sox').textContent = s.limits.SOX || 50.0;
             }
         }
     } catch (err) {
@@ -995,22 +1003,34 @@ async function saveSettings(e) {
     const btn = document.getElementById('btn-save-settings');
     const resultDiv = document.getElementById('settings-save-result');
 
+    const botTokenVal = document.getElementById('bot-token')?.value?.trim() || '';
+    const chatIdVal = document.getElementById('chat-id')?.value?.trim() || '';
+    const sheetIdVal = document.getElementById('google-sheet-id')?.value?.trim() || '';
+    const reportTimeVal = document.getElementById('report-time')?.value || '08:30';
+    const templateVal = document.getElementById('template-text')?.value || '';
+    const tspVal = parseFloat(document.getElementById('limit-val-tsp')?.value) || 15.0;
+    const noxVal = parseFloat(document.getElementById('limit-val-nox')?.value) || 50.0;
+    const soxVal = parseFloat(document.getElementById('limit-val-sox')?.value) || 50.0;
+
     const payload = {
-        bot_token: document.getElementById('bot-token').value.trim(),
-        chat_id: document.getElementById('chat-id').value.trim(),
-        google_sheet_id: document.getElementById('google-sheet-id').value.trim(),
-        report_time: document.getElementById('report-time').value,
-        template: document.getElementById('template-text').value,
+        bot_token: botTokenVal,
+        chat_id: chatIdVal,
+        google_sheet_id: sheetIdVal,
+        report_time: reportTimeVal,
+        template: templateVal,
         limits: {
-            TSP: parseFloat(document.getElementById('limit-val-tsp').value) || 15.0,
-            NOX: parseFloat(document.getElementById('limit-val-nox').value) || 50.0,
-            SOX: parseFloat(document.getElementById('limit-val-sox').value) || 50.0
+            TSP: tspVal,
+            NOX: noxVal,
+            SOX: soxVal
         }
     };
 
     // 버튼 로딩 상태
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 저장 중...'; }
-    if (resultDiv) resultDiv.style.display = 'none';
+    if (resultDiv) {
+        resultDiv.style.display = 'block';
+        resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(6,182,212,0.12);border:1px solid rgba(6,182,212,0.3);border-radius:8px;color:var(--accent-cyan);font-size:0.87rem;"><i class="fa-solid fa-spinner fa-spin"></i> 구글 시트 및 시스템 설정 저장 중...</div>`;
+    }
 
     try {
         const res = await fetch('/api/settings', {
@@ -1023,31 +1043,34 @@ async function saveSettings(e) {
         if (data.success) {
             if (resultDiv) {
                 resultDiv.style.display = 'block';
-                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> 설정이 성공적으로 저장되었습니다!</div>`;
+                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 완료!</b> 텔레그램 Bot Token 및 배출 기준치가 성공적으로 반영되었습니다.</div>`;
             }
             showToast('✅ Bot 설정 및 기준치가 저장되었습니다!');
             loadSettings();
+            loadLogs();
         } else {
             const msg = data.message || '저장 실패';
             if (resultDiv) {
                 resultDiv.style.display = 'block';
-                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.87rem;"><i class="fa-solid fa-triangle-exclamation"></i> 저장 실패: ${msg}</div>`;
+                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.87rem;"><i class="fa-solid fa-triangle-exclamation"></i> <b>저장 실패:</b> ${msg}</div>`;
             }
             showToast(`저장 실패: ${msg}`, 'ERROR');
         }
     } catch (err) {
         if (resultDiv) {
             resultDiv.style.display = 'block';
-            resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.87rem;"><i class="fa-solid fa-circle-xmark"></i> 네트워크 오류: ${err.message}</div>`;
+            resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.3);border-radius:8px;color:#fca5a5;font-size:0.87rem;"><i class="fa-solid fa-circle-xmark"></i> <b>통신 오류:</b> ${err.message}</div>`;
         }
         showToast(`저장 오류: ${err.message}`, 'ERROR');
     } finally {
         if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장'; }
     }
 }
+window.saveSettings = saveSettings;
 
 function insertTag(tag) {
     const textarea = document.getElementById('template-text');
+    if (!textarea) return;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
     const text = textarea.value;
@@ -1056,43 +1079,72 @@ function insertTag(tag) {
     textarea.focus();
     textarea.selectionStart = textarea.selectionEnd = start + tag.length;
 }
+window.insertTag = insertTag;
 
-// 7. System Simulation
+// 7. System Simulation & Test Dispatch
 function initSimulation() {
     const btnSim = document.getElementById('btn-run-simulation');
-    if (!btnSim) return;
-
-    btnSim.addEventListener('click', async () => {
-        let currentOutlet = document.getElementById('outlet-select')?.value || '배출구 1';
-        if (currentOutlet === 'ALL') currentOutlet = '배출구 1';
-
-        showToast(`🧪 가상 데이터 시뮬레이션 및 텔레그램 테스트 발송 실행 중...`);
-        
-        try {
-            const res = await fetch(`/api/simulate?outlet=${encodeURIComponent(currentOutlet)}`, {
-                method: 'POST'
-            });
-            const data = await res.json();
-            
-            if (data.success) {
-                const sim = data.data;
-                const isMock = sim.telegram_result ? sim.telegram_result.is_mock : true;
-                const mockInfo = isMock ? "(가상 발송)" : "(실제 텔레그램 전송)";
-                
-                showToast(`✅ 시뮬레이션 완료! ${sim.detected_alarm_count || 0}건 이상 징후 감지 및 ${mockInfo} 성공!`);
-                loadLogs();
-            } else {
-                showToast(`시뮬레이션 오류: ${data.detail || data.error || '실행 오류'}`, 'ERROR');
-            }
-        } catch (err) {
-            showToast(`시뮬레이션 실행 실패: ${err.message}`, 'ERROR');
-        }
-    });
+    if (btnSim) {
+        btnSim.onclick = triggerSimulation;
+        btnSim.addEventListener('click', triggerSimulation);
+    }
 }
+
+async function triggerSimulation(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+
+    const btnSim = document.getElementById('btn-run-simulation');
+    let currentOutlet = document.getElementById('outlet-select')?.value || '배출구 1';
+    if (currentOutlet === 'ALL') currentOutlet = '배출구 1';
+
+    if (btnSim) {
+        btnSim.disabled = true;
+        btnSim.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 시뮬레이션 및 발송 중...';
+    }
+
+    showToast(`🧪 가상 데이터 생성 -> 분석 -> 텔레그램 테스트 발송 실행 중...`);
+    
+    try {
+        const res = await fetch(`/api/simulate?outlet=${encodeURIComponent(currentOutlet)}`, {
+            method: 'POST'
+        });
+        const data = await res.json();
+        
+        if (data.success) {
+            const sim = data.data;
+            const tg = sim.telegram_result || {};
+            const isMock = tg.is_mock;
+            const isOk = tg.success;
+            
+            if (isOk && !isMock) {
+                showToast(`✅ 실제 텔레그램 발송 성공! (${sim.detected_alarm_count || 0}건 이상 신호 감지)`);
+            } else if (isOk && isMock) {
+                showToast(`ℹ️ Token/Chat ID 미설정으로 가상 발송 성공 (${sim.detected_alarm_count || 0}건)`);
+            } else {
+                showToast(`⚠️ 텔레그램 전송 실패: ${tg.error || '오류'}`, 'ERROR');
+            }
+            loadLogs();
+        } else {
+            showToast(`시뮬레이션 오류: ${data.detail || data.error || '실행 오류'}`, 'ERROR');
+        }
+    } catch (err) {
+        showToast(`시뮬레이션 통신 실패: ${err.message}`, 'ERROR');
+    } finally {
+        if (btnSim) {
+            btnSim.disabled = false;
+            btnSim.innerHTML = '<i class="fa-solid fa-vial-virus"></i> 테스트 발송 (시뮬레이션 실행)';
+        }
+    }
+}
+window.triggerSimulation = triggerSimulation;
 
 // 8. Logs History
 function initLogs() {
-    document.getElementById('btn-refresh-logs').addEventListener('click', loadLogs);
+    const btnRefresh = document.getElementById('btn-refresh-logs');
+    if (btnRefresh) {
+        btnRefresh.onclick = loadLogs;
+        btnRefresh.addEventListener('click', loadLogs);
+    }
 }
 
 async function loadLogs() {
@@ -1107,6 +1159,7 @@ async function loadLogs() {
         console.error("로그 로드 오류:", err);
     }
 }
+window.loadLogs = loadLogs;
 
 function renderLogsTable(logs) {
     const tbody = document.getElementById('log-tbody');

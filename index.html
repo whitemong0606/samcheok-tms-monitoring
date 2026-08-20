@@ -403,11 +403,11 @@
                     <div class="card glass-card settings-card">
                         <div class="card-title">
                             <h3><i class="fa-solid fa-sliders"></i> Telegram Bot & 알림 설정</h3>
-                            <button id="btn-save-settings" class="btn btn-primary">
+                            <button id="btn-save-settings" class="btn btn-primary" onclick="saveSettings(event)">
                                 <i class="fa-solid fa-floppy-disk"></i> 설정 저장
                             </button>
                         </div>
-                        <form id="settings-form">
+                        <form id="settings-form" onsubmit="saveSettings(event)">
                             <div class="form-group">
                                 <label for="bot-token">Telegram Bot Token</label>
                                 <div class="input-with-icon">
@@ -484,7 +484,7 @@
                                 <h4>🧪 시스템 시뮬레이션 기능</h4>
                                 <p>조건에 맞는 가상 굴뚝 원시 데이터(이상 징후 포함)를 임의로 생성하여 분석 로직을 태운 후, 텔레그램 시뮬레이션 알람을 즉시 발송합니다.</p>
                             </div>
-                            <button id="btn-run-simulation" class="btn btn-accent btn-lg">
+                            <button id="btn-run-simulation" class="btn btn-accent btn-lg" onclick="triggerSimulation(event)">
                                 <i class="fa-solid fa-vial-virus"></i> 테스트 발송 (시뮬레이션 실행)
                             </button>
                         </div>
@@ -495,7 +495,7 @@
                 <div class="table-section glass-card log-section">
                     <div class="table-header">
                         <h3><i class="fa-solid fa-history"></i> Telegram 알림 송신 내역 (로그)</h3>
-                        <button id="btn-refresh-logs" class="btn btn-secondary btn-sm">
+                        <button id="btn-refresh-logs" class="btn btn-secondary btn-sm" onclick="loadLogs()">
                             <i class="fa-solid fa-rotate-right"></i> 로그 새로고침
                         </button>
                     </div>
@@ -529,6 +529,6 @@
     </div>
 
     <!-- Custom Script -->
-    <script src="/static/js/app.js?v=20260820_v5"></script>
+    <script src="/static/js/app.js?v=20260820_v7"></script>
 </body>
 </html>
