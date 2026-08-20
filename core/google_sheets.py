@@ -14,6 +14,7 @@ class GoogleSheetsStorage:
         self.sheet_id = os.getenv("GOOGLE_SHEET_ID") or config.GOOGLE_SHEET_ID
         self.client = None
         self.spreadsheet = None
+        self._memory_store = None
         
         # Vercel Serverless 환경 대응: /tmp 디렉토리 사용 (Read-only filesystem 에러 방지)
         self.fallback_file = os.path.join(tempfile.gettempdir(), "storage_fallback.json")
@@ -49,22 +50,76 @@ class GoogleSheetsStorage:
                 print(f"[GoogleSheetsStorage] WARNING: Google Sheets API 연결 실패 ({e}). 로컬 storage_fallback 사용.")
                 self.client = None
 
-    def _init_local_fallback(self):
-        if not os.path.exists(self.fallback_file):
-            initial_data = {
-                "settings": {
-                    "bot_token": config.TELEGRAM_BOT_TOKEN,
-                    "chat_id": config.TELEGRAM_CHAT_ID,
-                    "google_sheet_id": config.GOOGLE_SHEET_ID,
-                    "report_time": config.DAILY_REPORT_TIME,
-                    "limits": default_limits.model_dump(),
-                    "template": config.DEFAULT_TEMPLATE
-                },
-                "logs": [],
-                "telemetry_cache": {}
-            }
+    def _get_default_data(self) -> Dict[str, Any]:
+        limits_dict = {"TSP": 15.0, "NOX": 50.0, "SOX": 50.0, "O2": 21.0, "Flow": 50000.0, "Temp": 300.0}
+        try:
+            if hasattr(default_limits, "model_dump"):
+                limits_dict = default_limits.model_dump()
+            elif hasattr(default_limits, "dict"):
+                limits_dict = default_limits.dict()
+        except Exception:
+            pass
+
+        return {
+            "settings": {
+                "bot_token": config.TELEGRAM_BOT_TOKEN,
+                "chat_id": config.TELEGRAM_CHAT_ID,
+                "discord_webhook_url": "",
+                "google_sheet_id": config.GOOGLE_SHEET_ID,
+                "report_time": config.DAILY_REPORT_TIME,
+                "limits": limits_dict,
+                "template": config.DEFAULT_TEMPLATE
+            },
+            "logs": [],
+            "telemetry_cache": {},
+            "manual_5m_cache": {}
+        }
+
+    def _load_local_data(self) -> Dict[str, Any]:
+        """로컬 파일 또는 메모리에서 데이터를 안전하게 로드"""
+        if self._memory_store is None:
+            self._memory_store = self._get_default_data()
+
+        try:
+            if os.path.exists(self.fallback_file):
+                with open(self.fallback_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self._memory_store.update(data)
+                        return self._memory_store
+        except Exception as e:
+            print(f"[GoogleSheetsStorage] fallback_file 로드 예외: {e}")
+
+        try:
+            if os.path.exists("core/storage_fallback.json"):
+                with open("core/storage_fallback.json", "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        self._memory_store.update(data)
+                        return self._memory_store
+        except Exception:
+            pass
+
+        return self._memory_store
+
+    def _save_local_data(self, data: Dict[str, Any]) -> bool:
+        """로컬 파일 및 메모리에 데이터를 안전하게 저장"""
+        self._memory_store = data
+        try:
             with open(self.fallback_file, "w", encoding="utf-8") as f:
-                json.dump(initial_data, f, ensure_ascii=False, indent=2)
+                json.dump(data, f, ensure_ascii=False, indent=2)
+            return True
+        except Exception as e:
+            print(f"[GoogleSheetsStorage] fallback_file 저장 예외 (메모리 유지): {e}")
+            return True
+
+    def _init_local_fallback(self):
+        try:
+            if not os.path.exists(self.fallback_file):
+                initial_data = self._get_default_data()
+                self._save_local_data(initial_data)
+        except Exception:
+            pass
 
     def normalize_telemetry_df(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -183,21 +238,20 @@ class GoogleSheetsStorage:
 
         # 로컬 Fallback 캐시 조회
         try:
-            with open(self.fallback_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                cache = data.get("telemetry_cache", {})
-                curr_rows = cache.get(query_date_str, [])
-                prev_rows = cache.get(prev_date_str, [])
-                rows = prev_rows + curr_rows
-                if rows:
-                    df = pd.DataFrame(rows)
-                    df = self.normalize_telemetry_df(df)
-                    df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
-                    df.sort_values(by="timestamp", inplace=True)
-                    for col in ["O2", "Flow", "Temp"]:
-                        if col in df.columns:
-                            df[col] = ""
-                    return df
+            data = self._load_local_data()
+            cache = data.get("telemetry_cache", {})
+            curr_rows = cache.get(query_date_str, [])
+            prev_rows = cache.get(prev_date_str, [])
+            rows = prev_rows + curr_rows
+            if rows:
+                df = pd.DataFrame(rows)
+                df = self.normalize_telemetry_df(df)
+                df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+                df.sort_values(by="timestamp", inplace=True)
+                for col in ["O2", "Flow", "Temp"]:
+                    if col in df.columns:
+                        df[col] = ""
+                return df
         except Exception as e:
             print(f"[GoogleSheetsStorage] 로컬 캐시 로드 예외: {e}")
 
@@ -244,8 +298,7 @@ class GoogleSheetsStorage:
 
             # 로컬 Fallback 캐시 업데이트
             try:
-                with open(self.fallback_file, "r", encoding="utf-8") as f:
-                    fallback_data = json.load(f)
+                fallback_data = self._load_local_data()
                 if "telemetry_cache" not in fallback_data:
                     fallback_data["telemetry_cache"] = {}
                 
@@ -257,8 +310,7 @@ class GoogleSheetsStorage:
                     existing_map[key] = r
                 
                 fallback_data["telemetry_cache"][date_tab] = list(existing_map.values())
-                with open(self.fallback_file, "w", encoding="utf-8") as f:
-                    json.dump(fallback_data, f, ensure_ascii=False, indent=2)
+                self._save_local_data(fallback_data)
             except Exception as e:
                 print(f"[GoogleSheetsStorage] 로컬 캐시 업데이트 오류: {e}")
 
@@ -407,20 +459,15 @@ class GoogleSheetsStorage:
             except Exception:
                 pass
         
-        with open(self.fallback_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("settings", {})
+        data = self._load_local_data()
+        return data.get("settings", {})
 
     def save_settings(self, new_settings: Dict[str, Any]) -> bool:
-        with open(self.fallback_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
+        data = self._load_local_data()
         current_settings = data.get("settings", {})
         current_settings.update(new_settings)
         data["settings"] = current_settings
-        
-        with open(self.fallback_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        self._save_local_data(data)
 
         if self.spreadsheet:
             try:
@@ -473,22 +520,18 @@ class GoogleSheetsStorage:
 
             # 1. 로컬 fallback manual_5m_cache 캐시 저장
             try:
-                for path in [self.fallback_file, "core/storage_fallback.json"]:
-                    if os.path.exists(path):
-                        with open(path, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                        if "manual_5m_cache" not in data:
-                            data["manual_5m_cache"] = {}
-                        
-                        existing = data["manual_5m_cache"].get(date_str, [])
-                        existing_map = {str(r.get("timestamp")) + "_" + str(r.get("outlet")): r for r in existing}
-                        for r in records:
-                            k = str(r.get("timestamp")) + "_" + str(r.get("outlet"))
-                            existing_map[k] = r
-                        
-                        data["manual_5m_cache"][date_str] = list(existing_map.values())
-                        with open(path, "w", encoding="utf-8") as f:
-                            json.dump(data, f, ensure_ascii=False, indent=2)
+                data = self._load_local_data()
+                if "manual_5m_cache" not in data:
+                    data["manual_5m_cache"] = {}
+                
+                existing = data["manual_5m_cache"].get(date_str, [])
+                existing_map = {str(r.get("timestamp")) + "_" + str(r.get("outlet")): r for r in existing}
+                for r in records:
+                    k = str(r.get("timestamp")) + "_" + str(r.get("outlet"))
+                    existing_map[k] = r
+                
+                data["manual_5m_cache"][date_str] = list(existing_map.values())
+                self._save_local_data(data)
             except Exception as e:
                 print(f"[GoogleSheetsStorage] 수동 5분 로컬 캐시 저장 예외: {e}")
 
@@ -564,18 +607,15 @@ class GoogleSheetsStorage:
 
         # 로컬 fallback 캐시
         try:
-            for path in [self.fallback_file, "core/storage_fallback.json"]:
-                if os.path.exists(path):
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    cache = data.get("manual_5m_cache", {})
-                    rows = cache.get(query_date_str, [])
-                    if rows:
-                        df = pd.DataFrame(rows)
-                        df = self.normalize_telemetry_df(df)
-                        df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
-                        df.sort_values(by="timestamp", inplace=True)
-                        return df
+            data = self._load_local_data()
+            cache = data.get("manual_5m_cache", {})
+            rows = cache.get(query_date_str, [])
+            if rows:
+                df = pd.DataFrame(rows)
+                df = self.normalize_telemetry_df(df)
+                df.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+                df.sort_values(by="timestamp", inplace=True)
+                return df
         except Exception as e:
             print(f"[GoogleSheetsStorage] 수동 5분 로컬 캐시 로드 예외: {e}")
         return None
@@ -594,12 +634,9 @@ class GoogleSheetsStorage:
                 pass
 
         try:
-            for path in [self.fallback_file, "core/storage_fallback.json"]:
-                if os.path.exists(path):
-                    with open(path, "r", encoding="utf-8") as f:
-                        data = json.load(f)
-                    cache = data.get("manual_5m_cache", {})
-                    dates.update(cache.keys())
+            data = self._load_local_data()
+            cache = data.get("manual_5m_cache", {})
+            dates.update(cache.keys())
         except Exception:
             pass
 
@@ -617,15 +654,11 @@ class GoogleSheetsStorage:
             "status": status
         }
         
-        with open(self.fallback_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            
+        data = self._load_local_data()
         logs = data.get("logs", [])
         logs.insert(0, log_entry)
         data["logs"] = logs[:200]
-        
-        with open(self.fallback_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        self._save_local_data(data)
 
         if self.spreadsheet:
             try:
@@ -657,9 +690,8 @@ class GoogleSheetsStorage:
             except Exception:
                 pass
                 
-        with open(self.fallback_file, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            return data.get("logs", [])[:limit]
+        data = self._load_local_data()
+        return data.get("logs", [])[:limit]
 
 # 글로벌 스토리지 인스턴스
 storage = GoogleSheetsStorage()
