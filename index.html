@@ -544,6 +544,36 @@
         </main>
     </div>
 
+    <!-- Admin PIN Authentication Modal -->
+    <div id="admin-pin-modal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <div class="modal-header">
+                <h4><i class="fa-solid fa-shield-halved" style="color:var(--accent-amber);"></i> 관리자 인증</h4>
+                <button type="button" class="btn-modal-close" onclick="closePinModal()"><i class="fa-solid fa-xmark"></i></button>
+            </div>
+            <div class="modal-body">
+                <p style="font-size:0.88rem; color:var(--text-secondary); margin-bottom:14px; line-height:1.5;">
+                    텔레그램 봇 및 모니터링 설정을 변경하려면 <b>관리자 비밀번호(8자리)</b>를 입력하세요.
+                </p>
+                <div class="form-group" style="margin-bottom:8px;">
+                    <div class="input-with-icon">
+                        <i class="fa-solid fa-lock"></i>
+                        <input type="password" id="admin-pin-input" class="form-input" placeholder="비밀번호 8자리" maxlength="12" inputmode="numeric" autocomplete="off" style="text-align:center; font-size:1.15rem; letter-spacing:4px; font-weight:700;" onkeydown="if(event.key==='Enter') verifyAdminPin()">
+                    </div>
+                </div>
+                <div id="pin-error-msg" style="display:none; color:#f87171; font-size:0.82rem; margin-top:6px;">
+                    <i class="fa-solid fa-triangle-exclamation"></i> 비밀번호가 올바르지 않습니다. 다시 입력해주세요.
+                </div>
+            </div>
+            <div class="modal-footer" style="display:flex; justify-content:flex-end; gap:8px; margin-top:18px;">
+                <button type="button" class="btn btn-secondary" onclick="closePinModal()">취소</button>
+                <button type="button" class="btn btn-primary" onclick="verifyAdminPin()" style="background:#f59e0b; color:#000; font-weight:700;">
+                    <i class="fa-solid fa-key"></i> 인증 및 수정 활성화
+                </button>
+            </div>
+        </div>
+    </div>
+
     <!-- Notification Toast Modal -->
     <div id="toast" class="toast hidden">
         <i class="toast-icon fa-solid fa-info-circle"></i>

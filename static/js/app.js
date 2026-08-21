@@ -1016,21 +1016,53 @@ function updateSettingsUIState() {
     }
 }
 
+function openPinModal() {
+    const modal = document.getElementById('admin-pin-modal');
+    const input = document.getElementById('admin-pin-input');
+    const err = document.getElementById('pin-error-msg');
+    if (err) err.style.display = 'none';
+    if (input) input.value = '';
+    if (modal) {
+        modal.style.display = 'flex';
+        setTimeout(() => {
+            if (input) input.focus();
+        }, 150);
+    }
+}
+window.openPinModal = openPinModal;
+
+function closePinModal() {
+    const modal = document.getElementById('admin-pin-modal');
+    if (modal) modal.style.display = 'none';
+}
+window.closePinModal = closePinModal;
+
+function verifyAdminPin() {
+    const input = document.getElementById('admin-pin-input');
+    const err = document.getElementById('pin-error-msg');
+    const val = input ? input.value.trim() : '';
+
+    if (val === '77137713') {
+        _isSettingsUnlocked = true;
+        closePinModal();
+        updateSettingsUIState();
+        showToast('🔓 관리자 인증 성공! 설정을 수정한 후 [설정 저장]을 누르세요.');
+    } else {
+        if (err) err.style.display = 'block';
+        if (input) {
+            input.value = '';
+            input.focus();
+        }
+        showToast('❌ 비밀번호가 올바르지 않습니다. (인증 실패)', 'ERROR');
+    }
+}
+window.verifyAdminPin = verifyAdminPin;
+
 async function toggleSettingsLock(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
     if (!_isSettingsUnlocked) {
-        // 비밀번호 입력 요청
-        const pin = prompt("🔒 텔레그램 봇 및 시스템 설정을 변경하려면 관리자 비밀번호(8자리)를 입력하세요:");
-        if (pin === null) return; // 사용자가 취소 누름
-
-        if (pin.trim() === "77137713") {
-            _isSettingsUnlocked = true;
-            updateSettingsUIState();
-            showToast("🔓 관리자 인증 성공! 설정을 수정한 후 [설정 저장]을 누르세요.");
-        } else {
-            showToast("❌ 비밀번호가 올바르지 않습니다. (인증 실패)", "ERROR");
-        }
+        openPinModal();
     } else {
         // 이미 잠금 해제 상태이면 설정 저장 실행
         await saveSettings(e);
