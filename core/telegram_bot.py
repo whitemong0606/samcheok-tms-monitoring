@@ -107,7 +107,11 @@ class TelegramBot:
                     o2 = float(r.get("avg_o2", 0.0))
                     flow = float(r.get("avg_flow", 0.0))
                     temp = float(r.get("avg_temp", 0.0))
-                    avg_lines.append(f"• <b>[{out}]</b> TSP {tsp:.2f}mg | NOX {nox:.2f}ppm | SOX {sox:.2f}ppm | 유량 {flow:,.0f}m³/h | O2 {o2:.1f}% | 온도 {temp:.1f}°C")
+                    
+                    base_str = f"• <b>[{out}]</b> TSP {tsp:.2f}mg | NOX {nox:.2f}ppm | SOX {sox:.2f}ppm"
+                    if flow > 0 or o2 > 0 or temp > 0:
+                        base_str += f" | 유량 {flow:,.0f}m³/h | O2 {o2:.1f}% | 온도 {temp:.1f}°C"
+                    avg_lines.append(base_str)
                 elif r and "정지" in str(r.get("status", "")):
                     avg_lines.append(f"• <b>[{out}]</b> 🔴 가동정지 (운전 데이터 없음)")
                 else:

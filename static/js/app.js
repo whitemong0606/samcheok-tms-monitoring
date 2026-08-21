@@ -969,6 +969,85 @@ function initSettings() {
     }
 }
 
+let _isSettingsUnlocked = false;
+
+function setSettingsFormDisabled(disabled) {
+    const inputIds = [
+        'bot-token', 'chat-id', 'group-chat-id', 
+        'google-sheet-id', 'report-time', 'template-text',
+        'limit-val-tsp', 'limit-val-nox', 'limit-val-sox'
+    ];
+    inputIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.disabled = disabled;
+    });
+}
+
+function updateSettingsUIState() {
+    const btn = document.getElementById('btn-save-settings');
+    const banner = document.getElementById('settings-lock-banner');
+    
+    if (_isSettingsUnlocked) {
+        setSettingsFormDisabled(false);
+        if (btn) {
+            btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장';
+            btn.style.background = '#10b981';
+            btn.style.color = '#fff';
+        }
+        if (banner) {
+            banner.innerHTML = '<i class="fa-solid fa-lock-open" style="color:#10b981;"></i> <b style="color:#10b981;">관리자 모드 활성화됨:</b> 설정값을 수정한 후 상단의 <b>[설정 저장]</b>을 누르면 저장 및 자동 잠금됩니다.';
+            banner.style.background = 'rgba(16,185,129,0.12)';
+            banner.style.border = '1px solid rgba(16,185,129,0.3)';
+            banner.style.color = '#a7f3d0';
+        }
+    } else {
+        setSettingsFormDisabled(true);
+        if (btn) {
+            btn.innerHTML = '<i class="fa-solid fa-lock"></i> 설정 변경';
+            btn.style.background = '#f59e0b';
+            btn.style.color = '#000';
+        }
+        if (banner) {
+            banner.innerHTML = '<i class="fa-solid fa-shield-halved"></i> <b>보안 잠금 상태:</b> 설정 변경을 방지하기 위해 비활성화되어 있습니다. 수정하려면 우측 <b>[설정 변경]</b>을 누르세요.';
+            banner.style.background = 'rgba(245,158,11,0.12)';
+            banner.style.border = '1px solid rgba(245,158,11,0.3)';
+            banner.style.color = '#fef08a';
+        }
+    }
+}
+
+async function toggleSettingsLock(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+
+    if (!_isSettingsUnlocked) {
+        // 비밀번호 입력 요청
+        const pin = prompt("🔒 텔레그램 봇 및 시스템 설정을 변경하려면 관리자 비밀번호(8자리)를 입력하세요:");
+        if (pin === null) return; // 사용자가 취소 누름
+
+        if (pin.trim() === "77137713") {
+            _isSettingsUnlocked = true;
+            updateSettingsUIState();
+            showToast("🔓 관리자 인증 성공! 설정을 수정한 후 [설정 저장]을 누르세요.");
+        } else {
+            showToast("❌ 비밀번호가 올바르지 않습니다. (인증 실패)", "ERROR");
+        }
+    } else {
+        // 이미 잠금 해제 상태이면 설정 저장 실행
+        await saveSettings(e);
+    }
+}
+window.toggleSettingsLock = toggleSettingsLock;
+
+function handleSettingsFormSubmit(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+    if (_isSettingsUnlocked) {
+        saveSettings(e);
+    } else {
+        toggleSettingsLock(e);
+    }
+}
+window.handleSettingsFormSubmit = handleSettingsFormSubmit;
+
 async function loadSettings() {
     try {
         const res = await fetch('/api/settings');
@@ -979,7 +1058,6 @@ async function loadSettings() {
             if (document.getElementById('bot-token')) document.getElementById('bot-token').value = s.bot_token || '';
             if (document.getElementById('chat-id')) document.getElementById('chat-id').value = s.chat_id || '';
             if (document.getElementById('group-chat-id')) document.getElementById('group-chat-id').value = s.group_chat_id || '';
-            if (document.getElementById('discord-webhook-url')) document.getElementById('discord-webhook-url').value = s.discord_webhook_url || '';
             if (document.getElementById('google-sheet-id')) document.getElementById('google-sheet-id').value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
             if (document.getElementById('report-time')) document.getElementById('report-time').value = s.report_time || '08:30';
             if (document.getElementById('template-text')) document.getElementById('template-text').value = s.template || '';
@@ -994,6 +1072,7 @@ async function loadSettings() {
                 if (document.getElementById('limit-sox')) document.getElementById('limit-sox').textContent = s.limits.SOX || 50.0;
             }
         }
+        updateSettingsUIState();
     } catch (err) {
         console.error("설정 로드 오류:", err);
     }
@@ -1008,7 +1087,6 @@ async function saveSettings(e) {
     const botTokenVal = document.getElementById('bot-token')?.value?.trim() || '';
     const chatIdVal = document.getElementById('chat-id')?.value?.trim() || '';
     const groupChatIdVal = document.getElementById('group-chat-id')?.value?.trim() || '';
-    const discordWebhookVal = document.getElementById('discord-webhook-url')?.value?.trim() || '';
     const sheetIdVal = document.getElementById('google-sheet-id')?.value?.trim() || '';
     const reportTimeVal = document.getElementById('report-time')?.value || '08:30';
     const templateVal = document.getElementById('template-text')?.value || '';
@@ -1020,7 +1098,6 @@ async function saveSettings(e) {
         bot_token: botTokenVal,
         chat_id: chatIdVal,
         group_chat_id: groupChatIdVal,
-        discord_webhook_url: discordWebhookVal,
         google_sheet_id: sheetIdVal,
         report_time: reportTimeVal,
         template: templateVal,
@@ -1049,9 +1126,10 @@ async function saveSettings(e) {
         if (data.success) {
             if (resultDiv) {
                 resultDiv.style.display = 'block';
-                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 완료!</b> 텔레그램 / 디스코드 Webhook 및 배출 기준치가 성공적으로 반영되었습니다.</div>`;
+                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 및 잠금 완료!</b> 변경된 설정이 성공적으로 반영되었습니다.</div>`;
             }
-            showToast('✅ Bot 및 알림 설정이 저장되었습니다!');
+            showToast('✅ Bot 및 알림 설정이 저장되었으며 보안 잠금 처리되었습니다.');
+            _isSettingsUnlocked = false;
             loadSettings();
             loadLogs();
         } else {
@@ -1069,7 +1147,8 @@ async function saveSettings(e) {
         }
         showToast(`저장 오류: ${err.message}`, 'ERROR');
     } finally {
-        if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장'; }
+        if (btn) { btn.disabled = false; }
+        updateSettingsUIState();
     }
 }
 window.saveSettings = saveSettings;
@@ -1105,10 +1184,10 @@ async function triggerSimulation(e) {
 
     if (btnSim) {
         btnSim.disabled = true;
-        btnSim.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 실측 데이터 분석 및 발송 중...';
+        btnSim.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 실측 데이터 분석 및 개인 텔레그램 발송 중...';
     }
 
-    showToast(`📡 실측 굴뚝 데이터 분석 -> 텔레그램 / 디스코드 테스트 발송 실행 중...`);
+    showToast(`📡 실측 굴뚝 데이터 분석 -> 개인 텔레그램 테스트 발송 실행 중...`);
     
     try {
         const res = await fetch(`/api/simulate?outlet=${encodeURIComponent(currentOutlet)}`, {
@@ -1119,16 +1198,12 @@ async function triggerSimulation(e) {
         if (data.success) {
             const sim = data.data;
             const tg = sim.telegram_result || {};
-            const dc = sim.discord_result || {};
             const isReal = sim.is_real_data;
             const period = sim.period || '';
+            const src = sim.data_source || '실측데이터';
 
-            let sendTargets = [];
-            if (tg.success && !tg.is_mock) sendTargets.push("텔레그램");
-            if (dc.success && !dc.is_mock) sendTargets.push("디스코드");
-            
-            const targetText = sendTargets.length > 0 ? `${sendTargets.join(' 및 ')} 전송 완료` : "가상 발송 완료 (미설정)";
-            const dataBadge = isReal ? "📡 실측 데이터 기반" : "🧪 시뮬레이션 기반";
+            const targetText = (tg.success && !tg.is_mock) ? "개인 텔레그램 발송 완료" : "가상 발송 완료 (미설정)";
+            const dataBadge = isReal ? `📡 실측 데이터 (${src})` : "🧪 시뮬레이션 기반";
 
             showToast(`✅ [${dataBadge}] ${targetText}! (${period})`);
             loadLogs();

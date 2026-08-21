@@ -1,13 +1,14 @@
 import pandas as pd
 import numpy as np
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, Any, List, Optional, Tuple
 from core.analyzer import StackAnalyzer
 from core.telegram_bot import telegram_bot
-from core.discord_bot import discord_bot
 from core.cleansys_api import cleansys_client
 from core.google_sheets import storage
 from core.config import config
+
+KST = timezone(timedelta(hours=9))
 
 class StackSimulator:
     def __init__(self):
@@ -72,12 +73,12 @@ class StackSimulator:
 
     def run_simulation_test(self, outlet_name: str = "ALL", real_df: Optional[pd.DataFrame] = None) -> Dict[str, Any]:
         """
-        [실제 굴뚝 측정 데이터 기반 테스트 발송]
-        1. 실제 수집된 24시간 실측 데이터(전일 08:00 ~ 금일 08:00)가 있으면 이를 1순위로 분석
-        2. 없으면 CleanSYS API 실시간 조회 또는 가상 시뮬레이션 데이터로 안전 대체
-        3. 텔레그램 및 디스코드 웹후크 동시 발송
+        [100% 실측 데이터 기반 개인 텔레그램 테스트 발송]
+        1. 구글 시트 / 캐시에 자동 수집된 24시간 실측 데이터(전일 08:00 ~ 금일 08:00) 로드
+        2. 자동분석과 100% 동일한 StackAnalyzer를 통해 실제 운전상태/평균수치/실제 이상감지 판별
+        3. 개인 관리자 Chat ID로만 발송 (팀원 그룹 채팅방 방해 없음)
         """
-        now_dt = datetime.now()
+        now_dt = datetime.now(KST)
         prev_dt = now_dt - timedelta(days=1)
         today_str = now_dt.strftime("%Y-%m-%d")
         prev_str = prev_dt.strftime("%Y-%m-%d")
@@ -85,22 +86,28 @@ class StackSimulator:
 
         outlets = config.OUTLETS
         df_target = None
-        is_real_data = False
+        data_source = "MOCK"
 
-        # 1. 전달받은 실데이터 확인
+        # 1. 전달받은 실데이터 확인 (수동 업로드 데이터 등)
         if real_df is not None and not real_df.empty:
             df_target = real_df
-            is_real_data = True
+            data_source = "MANUAL_UPLOAD"
 
-        # 2. 구글 시트 / 캐시 실측 데이터 확인
+        # 2. 구글 시트에 누적 저장된 24시간 실측 30분 데이터 로드 (어제 + 오늘)
         if df_target is None or df_target.empty:
             try:
-                df_sheet = storage.read_telemetry_data(today_str)
-                if df_sheet is not None and not df_sheet.empty and len(df_sheet) >= 10:
-                    df_target = df_sheet
-                    is_real_data = True
-            except Exception:
-                pass
+                dfs = []
+                for d in [prev_str, today_str]:
+                    day_df = storage.read_telemetry_data(d)
+                    if day_df is not None and not day_df.empty:
+                        dfs.append(day_df)
+                if dfs:
+                    df_target = pd.concat(dfs, ignore_index=True)
+                    df_target.drop_duplicates(subset=["timestamp", "outlet"], inplace=True)
+                    df_target.sort_values(by=["timestamp", "outlet"], inplace=True)
+                    data_source = "GOOGLE_SHEETS_30M"
+            except Exception as e:
+                print(f"[Simulator] 구글 시트 데이터 로드 예외: {e}")
 
         # 3. CleanSYS 실시간 공단 API 조회 시도
         if df_target is None or df_target.empty:
@@ -108,12 +115,14 @@ class StackSimulator:
                 df_api = cleansys_client.get_raw_telemetry_dataframe("한국남부발전(주) 삼척빛드림본부", "강원도 삼척시")
                 if df_api is not None and not df_api.empty:
                     df_target = df_api
-                    is_real_data = True
-            except Exception:
-                pass
+                    data_source = "CLEANSYS_API"
+            except Exception as e:
+                print(f"[Simulator] CleanSYS API 로드 예외: {e}")
 
-        # 4. 분석 기간(전일 08:00 ~ 금일 08:00 또는 실제 수집된 최신 시간대) 결정
-        if is_real_data and df_target is not None and "timestamp" in df_target.columns:
+        is_real_data = (data_source in ["GOOGLE_SHEETS_30M", "CLEANSYS_API", "MANUAL_UPLOAD"] and df_target is not None and not df_target.empty)
+
+        # 4. 분석 기간 결정 (실제 수집된 데이터의 시작 시각 ~ 종료 시각)
+        if is_real_data and "timestamp" in df_target.columns:
             ts_series = df_target["timestamp"].astype(str)
             min_ts = ts_series.min()
             max_ts = ts_series.max()
@@ -121,16 +130,15 @@ class StackSimulator:
         else:
             period_str = default_period_str
 
-        # 5. 배출구 1~5 개별 리포트 생성 및 취합
+        # 5. 배출구 1~5 자동 분석과 100% 동일한 로직으로 리포트 생성 및 알람 판별
         reports_by_outlet = {}
         all_alarms = []
         total_rows = 0
 
         for idx, out in enumerate(outlets):
-            if is_real_data and df_target is not None and "outlet" in df_target.columns:
+            if is_real_data and "outlet" in df_target.columns:
                 out_df = df_target[df_target["outlet"] == out]
                 if out_df.empty:
-                    # 해당 배출구 데이터 부재 시
                     rep = {
                         "date": period_str,
                         "outlet": out,
@@ -162,18 +170,16 @@ class StackSimulator:
 
         # 6. 메시지 렌더링
         message_text = telegram_bot.render_template(comprehensive_report)
-        
-        # 안내 타이틀
-        prefix = "📡 <b>[삼척빛드림본부 실측 데이터 리포트]</b>\n" if is_real_data else "🧪 <b>[삼척빛드림본부 테스트 리포트]</b>\n"
+        prefix = f"🧪 <b>[삼척빛드림본부 일일 리포트 테스트 발송]</b>\n📊 데이터 기반: {data_source}\n\n"
         full_message = prefix + message_text
 
-        # 7. 텔레그램 및 디스코드 동시 발송
+        # 7. 개인 Chat ID로만 텔레그램 발송
         tg_result = telegram_bot.send_message(full_message)
-        dc_result = discord_bot.send_message(full_message)
 
         return {
             "simulation_success": True,
             "is_real_data": is_real_data,
+            "data_source": data_source,
             "period": period_str,
             "outlets": outlets,
             "reports": reports_by_outlet,
@@ -181,7 +187,6 @@ class StackSimulator:
             "detected_alarm_count": len(all_alarms),
             "raw_alarms": all_alarms,
             "telegram_result": tg_result,
-            "discord_result": dc_result,
             "sent_message_preview": full_message
         }
 
