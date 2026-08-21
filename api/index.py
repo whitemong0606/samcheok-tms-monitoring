@@ -36,7 +36,6 @@ app = FastAPI(
     title="굴뚝 배출가스 자동감시 및 텔레그램 알림 시스템",
     version="1.0.0"
 )
-handler = app
 
 # CORS 설정
 app.add_middleware(
