@@ -57,25 +57,31 @@ analyzer = StackAnalyzer()
 # 메모리 내 임시 업로드 데이터 스토리지
 UPLOADED_DATA: Dict[str, pd.DataFrame] = {}
 
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "time": datetime.now().isoformat()}
+
 @app.get("/", response_class=HTMLResponse)
 def read_root():
-    try:
-        possible_paths = [
-            os.path.join(parent_dir, "static", "index.html"),
-            os.path.join(parent_dir, "index.html"),
-            os.path.join(current_dir, "static", "index.html"),
-            os.path.join(current_dir, "index.html"),
-            os.path.join(os.getcwd(), "static", "index.html"),
-            os.path.join(os.getcwd(), "index.html")
-        ]
-        for p in possible_paths:
+    candidate_paths = [
+        os.path.join(current_dir, "..", "static", "index.html"),
+        os.path.join(parent_dir, "static", "index.html"),
+        os.path.join(current_dir, "static", "index.html"),
+        os.path.join(os.getcwd(), "static", "index.html"),
+        os.path.join(os.getcwd(), "index.html"),
+        "static/index.html",
+        "index.html"
+    ]
+    for p in candidate_paths:
+        try:
             if os.path.exists(p):
                 with open(p, "r", encoding="utf-8") as f:
-                    content = f.read()
-                    if content and len(content) > 100:
-                        return HTMLResponse(content=content, headers={"Cache-Control": "no-cache, no-store, must-revalidate", "Pragma": "no-cache", "Expires": "0"})
-    except Exception as e:
-        print(f"Root read error: {e}")
+                    c = f.read()
+                    if c and len(c) > 500:
+                        return HTMLResponse(content=c, headers={"Cache-Control": "no-cache, no-store, must-revalidate"})
+        except Exception as e:
+            print(f"Error reading path {p}: {e}")
+            
     return HTMLResponse("<h2>굴뚝 배출가스 감시 시스템이 정상 작동 중입니다.</h2>")
 
 @app.get("/api/health")
