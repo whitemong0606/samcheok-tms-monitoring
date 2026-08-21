@@ -1,24 +1,15 @@
 {
-  "version": 2,
-  "functions": {
-    "api/index.py": {
-      "includeFiles": "static/**"
-    }
-  },
   "crons": [
     {
-      "path": "/api/cron/fetch-30m",
+      "path": "/api/cron/daily-report",
       "schedule": "0 8 * * *"
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/static/(.*)",
-      "dest": "/static/$1"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
+      "source": "/(.*)",
+      "destination": "/api/index"
     }
   ]
 }
+
