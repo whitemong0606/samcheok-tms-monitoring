@@ -978,6 +978,7 @@ async function loadSettings() {
             const s = data.settings;
             if (document.getElementById('bot-token')) document.getElementById('bot-token').value = s.bot_token || '';
             if (document.getElementById('chat-id')) document.getElementById('chat-id').value = s.chat_id || '';
+            if (document.getElementById('group-chat-id')) document.getElementById('group-chat-id').value = s.group_chat_id || '';
             if (document.getElementById('discord-webhook-url')) document.getElementById('discord-webhook-url').value = s.discord_webhook_url || '';
             if (document.getElementById('google-sheet-id')) document.getElementById('google-sheet-id').value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
             if (document.getElementById('report-time')) document.getElementById('report-time').value = s.report_time || '08:30';
@@ -1006,6 +1007,7 @@ async function saveSettings(e) {
 
     const botTokenVal = document.getElementById('bot-token')?.value?.trim() || '';
     const chatIdVal = document.getElementById('chat-id')?.value?.trim() || '';
+    const groupChatIdVal = document.getElementById('group-chat-id')?.value?.trim() || '';
     const discordWebhookVal = document.getElementById('discord-webhook-url')?.value?.trim() || '';
     const sheetIdVal = document.getElementById('google-sheet-id')?.value?.trim() || '';
     const reportTimeVal = document.getElementById('report-time')?.value || '08:30';
@@ -1017,6 +1019,7 @@ async function saveSettings(e) {
     const payload = {
         bot_token: botTokenVal,
         chat_id: chatIdVal,
+        group_chat_id: groupChatIdVal,
         discord_webhook_url: discordWebhookVal,
         google_sheet_id: sheetIdVal,
         report_time: reportTimeVal,

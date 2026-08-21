@@ -54,6 +54,16 @@ class TelegramBot:
             storage.add_log("ERROR", "TELEGRAM_EXCEPTION", f"네트워크 통신 에러: {err_str}", status="FAILED")
             return {"success": False, "is_mock": False, "error": err_str}
 
+    def send_group_message(self, text: str, bot_token: Optional[str] = None, group_chat_id: Optional[str] = None) -> Dict[str, Any]:
+        """
+        정기 일일 종합 리포트 전용 그룹 채널 메시지 발송
+        - 설정된 그룹 Chat ID가 있으면 그룹으로 우선 발송하고, 없으면 개인 Chat ID로 대체 발송
+        """
+        settings = storage.get_settings()
+        token = bot_token or settings.get("bot_token") or config.TELEGRAM_BOT_TOKEN
+        gid = group_chat_id or settings.get("group_chat_id") or getattr(config, "TELEGRAM_GROUP_CHAT_ID", "") or settings.get("chat_id") or config.TELEGRAM_CHAT_ID
+        return self.send_message(text=text, bot_token=token, chat_id=gid)
+
     def render_template(self, report_data: Dict[str, Any], template_str: Optional[str] = None) -> str:
         """
         사용자 설정 템플릿 치환 (배출구별 종합 리포트 및 단일 배출구 리포트 완벽 지원)

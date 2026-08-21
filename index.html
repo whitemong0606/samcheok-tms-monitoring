@@ -416,11 +416,24 @@
                                 </div>
                             </div>
                             <div class="form-group">
-                                <label for="chat-id">Telegram Chat ID</label>
+                                <label for="chat-id"><i class="fa-solid fa-user-shield"></i> 개인 테스트용 Chat ID (테스트 메시지 전용)</label>
                                 <div class="input-with-icon">
-                                    <i class="fa-solid fa-paper-plane"></i>
-                                    <input type="text" id="chat-id" class="form-input" placeholder="-1001234567890 또는 사용자 Chat ID">
+                                    <i class="fa-solid fa-user"></i>
+                                    <input type="text" id="chat-id" class="form-input" placeholder="개인 텔레그램 Chat ID (예: 123456789)">
                                 </div>
+                                <small style="color:var(--text-muted); font-size:0.78rem; margin-top:3px; display:block;">
+                                    * '리포트 테스트 발송' 클릭 시 팀원 방해 없이 내 개인 텔레그램으로만 발송됩니다.
+                                </small>
+                            </div>
+                            <div class="form-group">
+                                <label for="group-chat-id"><i class="fa-solid fa-users"></i> 정기 리포트 발송용 그룹 Chat ID (단체방 공유)</label>
+                                <div class="input-with-icon">
+                                    <i class="fa-solid fa-people-group"></i>
+                                    <input type="text" id="group-chat-id" class="form-input" placeholder="-100으로 시작하는 그룹 Chat ID (예: -1001234567890)">
+                                </div>
+                                <small style="color:var(--text-muted); font-size:0.78rem; margin-top:3px; display:block;">
+                                    * 매일 08:30 정기 리포트가 전체 팀원이 있는 이 그룹 채팅방으로 자동 전송됩니다.
+                                </small>
                             </div>
                             <div class="form-group">
                                 <label for="discord-webhook-url"><i class="fa-brands fa-discord" style="color:#5865F2;"></i> Discord Webhook URL (디스코드 그룹 채널 알림)</label>

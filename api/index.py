@@ -858,7 +858,7 @@ def cron_daily_report():
             "alarm_count": len(all_alarms)
         }
         msg = telegram_bot.render_template(comprehensive_report)
-        telegram_res = telegram_bot.send_message(msg)
+        telegram_res = telegram_bot.send_group_message(msg)
         discord_res = discord_bot.send_message(msg)
 
         return {
@@ -881,6 +881,7 @@ def get_settings():
         "settings": {
             "bot_token": st.get("bot_token", config.TELEGRAM_BOT_TOKEN),
             "chat_id": st.get("chat_id", config.TELEGRAM_CHAT_ID),
+            "group_chat_id": st.get("group_chat_id", getattr(config, "TELEGRAM_GROUP_CHAT_ID", "")),
             "discord_webhook_url": st.get("discord_webhook_url", ""),
             "google_sheet_id": st.get("google_sheet_id", config.GOOGLE_SHEET_ID),
             "report_time": st.get("report_time", "08:30"),
