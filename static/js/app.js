@@ -964,8 +964,7 @@ function renderAlarmTable(alarms) {
 function initSettings() {
     const btnSave = document.getElementById('btn-save-settings');
     if (btnSave) {
-        btnSave.onclick = saveSettings;
-        btnSave.addEventListener('click', saveSettings);
+        btnSave.onclick = toggleSettingsLock;
     }
 }
 
