@@ -23,14 +23,22 @@ import pandas as pd
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone, timedelta
 
-from core.config import config, default_limits
-from core.analyzer import StackAnalyzer
-from core.google_sheets import storage
-from core.telegram_bot import telegram_bot
-from core.discord_bot import discord_bot
-from core.simulator import simulator
-from core.cleansys_api import cleansys_client
-from core.plant_registry import get_plant_registry
+STARTUP_ERROR = None
+
+try:
+    from core.config import config, default_limits
+    from core.analyzer import StackAnalyzer
+    from core.google_sheets import storage
+    from core.telegram_bot import telegram_bot
+    from core.discord_bot import discord_bot
+    from core.simulator import simulator
+    from core.cleansys_api import cleansys_client
+    from core.plant_registry import get_plant_registry
+    analyzer = StackAnalyzer()
+except Exception as e:
+    import traceback
+    STARTUP_ERROR = traceback.format_exc()
+    analyzer = None
 
 app = FastAPI(
     title="굴뚝 배출가스 자동감시 및 텔레그램 알림 시스템",
@@ -47,21 +55,27 @@ app.add_middleware(
 )
 
 # Static Files 디렉토리 설정
-static_dir = os.path.join(parent_dir, "static") if parent_dir else os.path.join(os.getcwd(), "static")
-if os.path.exists(static_dir):
-    app.mount("/static", StaticFiles(directory=static_dir), name="static")
-
-analyzer = StackAnalyzer()
+try:
+    static_dir = os.path.join(parent_dir, "static") if parent_dir else os.path.join(os.getcwd(), "static")
+    if os.path.exists(static_dir):
+        app.mount("/static", StaticFiles(directory=static_dir), name="static")
+except Exception as e:
+    print(f"StaticFiles mount error: {e}")
 
 # 메모리 내 임시 업로드 데이터 스토리지
 UPLOADED_DATA: Dict[str, pd.DataFrame] = {}
 
 @app.get("/healthz")
 def healthz():
+    if STARTUP_ERROR:
+        return {"status": "error", "error": STARTUP_ERROR}
     return {"status": "ok", "time": datetime.now().isoformat()}
 
 @app.get("/", response_class=HTMLResponse)
 def read_root():
+    if STARTUP_ERROR:
+        return HTMLResponse(content=f"<h2>Startup Error:</h2><pre>{STARTUP_ERROR}</pre>", status_code=200)
+
     candidate_paths = [
         os.path.join(current_dir, "..", "static", "index.html"),
         os.path.join(parent_dir, "static", "index.html"),
