@@ -974,7 +974,8 @@ function setSettingsFormDisabled(disabled) {
     const inputIds = [
         'bot-token', 'chat-id', 'group-chat-id', 
         'google-sheet-id', 'report-time', 'template-text',
-        'limit-val-tsp', 'limit-val-nox', 'limit-val-sox'
+        'limit-val-tsp', 'limit-val-nox', 'limit-val-sox',
+        'rule-threshold', 'rule-hunting', 'rule-frozen', 'rule-stop-abnormal', 'rule-missing'
     ];
     inputIds.forEach(id => {
         const el = document.getElementById(id);
@@ -1102,6 +1103,14 @@ async function loadSettings() {
                 if (document.getElementById('limit-nox')) document.getElementById('limit-nox').textContent = s.limits.NOX || 50.0;
                 if (document.getElementById('limit-sox')) document.getElementById('limit-sox').textContent = s.limits.SOX || 50.0;
             }
+
+            if (s.alarm_rules) {
+                if (document.getElementById('rule-threshold')) document.getElementById('rule-threshold').checked = s.alarm_rules.THRESHOLD_EXCEEDED !== false;
+                if (document.getElementById('rule-hunting')) document.getElementById('rule-hunting').checked = s.alarm_rules.HUNTING !== false;
+                if (document.getElementById('rule-frozen')) document.getElementById('rule-frozen').checked = s.alarm_rules.FROZEN_DATA !== false;
+                if (document.getElementById('rule-stop-abnormal')) document.getElementById('rule-stop-abnormal').checked = s.alarm_rules.STOP_ABNORMAL !== false;
+                if (document.getElementById('rule-missing')) document.getElementById('rule-missing').checked = s.alarm_rules.MISSING_DATA !== false;
+            }
         }
         updateSettingsUIState();
     } catch (err) {
@@ -1125,6 +1134,14 @@ async function saveSettings(e) {
     const noxVal = parseFloat(document.getElementById('limit-val-nox')?.value) || 50.0;
     const soxVal = parseFloat(document.getElementById('limit-val-sox')?.value) || 50.0;
 
+    const alarmRules = {
+        THRESHOLD_EXCEEDED: document.getElementById('rule-threshold')?.checked ?? true,
+        HUNTING: document.getElementById('rule-hunting')?.checked ?? true,
+        FROZEN_DATA: document.getElementById('rule-frozen')?.checked ?? true,
+        STOP_ABNORMAL: document.getElementById('rule-stop-abnormal')?.checked ?? true,
+        MISSING_DATA: document.getElementById('rule-missing')?.checked ?? true
+    };
+
     const payload = {
         bot_token: botTokenVal,
         chat_id: chatIdVal,
@@ -1136,7 +1153,8 @@ async function saveSettings(e) {
             TSP: tspVal,
             NOX: noxVal,
             SOX: soxVal
-        }
+        },
+        alarm_rules: alarmRules
     };
 
     // 버튼 로딩 상태

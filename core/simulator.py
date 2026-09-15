@@ -130,6 +130,10 @@ class StackSimulator:
         else:
             period_str = default_period_str
 
+        # 저장된 알람 규칙(alarm_rules) 및 허용 기준치(limits)를 적용하여 Analyzer 갱신
+        settings = storage.get_settings()
+        self.analyzer = StackAnalyzer(limits=settings.get("limits"), alarm_rules=settings.get("alarm_rules"))
+
         # 5. 배출구 1~5 자동 분석과 100% 동일한 로직으로 리포트 생성 및 알람 판별
         reports_by_outlet = {}
         all_alarms = []

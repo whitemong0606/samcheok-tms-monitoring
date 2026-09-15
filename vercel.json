@@ -8,7 +8,7 @@
   "crons": [
     {
       "path": "/api/cron/daily-report",
-      "schedule": "0 8 * * *"
+      "schedule": "30 23 * * *"
     }
   ],
   "routes": [

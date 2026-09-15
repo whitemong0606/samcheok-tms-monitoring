@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
     <!-- Custom Style -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20260821_v9">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260916_v1">
 </head>
 <body>
     <div class="app-container">
@@ -472,6 +472,66 @@
                                     <input type="number" step="0.1" id="limit-val-sox" class="form-input" value="50.0" disabled>
                                 </div>
                             </div>
+
+                            <hr class="divider">
+
+                            <div class="card-title" style="margin-bottom:8px;">
+                                <h4><i class="fa-solid fa-bell" style="color:#f59e0b;"></i> 이상징후 알람 판별 조건 (ON / OFF 설정)</h4>
+                            </div>
+                            <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">
+                                대시보드 및 일일 텔레그램 리포트에서 감지할 이상신호 판별 조건을 선택하여 활성화/비활성화할 수 있습니다.
+                            </p>
+                            <div class="alarm-rules-list" style="display:flex; flex-direction:column; gap:8px;">
+                                <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); border-radius:8px; cursor:pointer;">
+                                    <div>
+                                        <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">
+                                            <i class="fa-solid fa-triangle-exclamation" style="color:#ef4444; margin-right:6px;"></i> 배출허용기준 초과 알람 (THRESHOLD_EXCEEDED)
+                                        </div>
+                                        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:2px;">TSP, NOX, SOX 측정값이 법적 허용 기준치를 초과할 때 감지</div>
+                                    </div>
+                                    <input type="checkbox" id="rule-threshold" class="form-check-input" checked disabled style="width:20px; height:20px; cursor:pointer; accent-color:#10b981;">
+                                </label>
+
+                                <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); border-radius:8px; cursor:pointer;">
+                                    <div>
+                                        <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">
+                                            <i class="fa-solid fa-wave-square" style="color:#f59e0b; margin-right:6px;"></i> 급변동 (헌팅) 감지 알람 (HUNTING)
+                                        </div>
+                                        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:2px;">이전 이동평균 대비 측정값이 급격히 튀거나 변동할 때 감지</div>
+                                    </div>
+                                    <input type="checkbox" id="rule-hunting" class="form-check-input" checked disabled style="width:20px; height:20px; cursor:pointer; accent-color:#10b981;">
+                                </label>
+
+                                <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); border-radius:8px; cursor:pointer;">
+                                    <div>
+                                        <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">
+                                            <i class="fa-solid fa-snowflake" style="color:#06b6d4; margin-right:6px;"></i> 수치 고정 데이터 알람 (FROZEN_DATA)
+                                        </div>
+                                        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:2px;">센서 고장 등으로 0이 아닌 동일한 수치가 장시간 고정 지시될 때 감지</div>
+                                    </div>
+                                    <input type="checkbox" id="rule-frozen" class="form-check-input" checked disabled style="width:20px; height:20px; cursor:pointer; accent-color:#10b981;">
+                                </label>
+
+                                <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); border-radius:8px; cursor:pointer;">
+                                    <div>
+                                        <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">
+                                            <i class="fa-solid fa-ban" style="color:#a855f7; margin-right:6px;"></i> 가동정지 중 이상신호 알람 (STOP_ABNORMAL)
+                                        </div>
+                                        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:2px;">시설 가동정지 상태에서 0 초과의 유효 배출가스 수치 감지 시 경보</div>
+                                    </div>
+                                    <input type="checkbox" id="rule-stop-abnormal" class="form-check-input" checked disabled style="width:20px; height:20px; cursor:pointer; accent-color:#10b981;">
+                                </label>
+
+                                <label style="display:flex; align-items:center; justify-content:space-between; padding:10px 14px; background:rgba(255,255,255,0.03); border:1px solid var(--card-border); border-radius:8px; cursor:pointer;">
+                                    <div>
+                                        <div style="font-weight:600; font-size:0.88rem; color:var(--text-main);">
+                                            <i class="fa-solid fa-clock-rotate-left" style="color:#ef4444; margin-right:6px;"></i> 연속 결측 알람 (MISSING_DATA)
+                                        </div>
+                                        <div style="font-size:0.76rem; color:var(--text-muted); margin-top:2px;">최근 2시간 연속 데이터 미수신(결측) 발생 시 감지</div>
+                                    </div>
+                                    <input type="checkbox" id="rule-missing" class="form-check-input" checked disabled style="width:20px; height:20px; cursor:pointer; accent-color:#10b981;">
+                                </label>
+                            </div>
                         </form>
 
                         <!-- 설정 저장 인라인 피드백 -->
@@ -581,6 +641,6 @@
     </div>
 
     <!-- Custom Script -->
-    <script src="/static/js/app.js?v=20260821_v9"></script>
+    <script src="/static/js/app.js?v=20260916_v1"></script>
 </body>
 </html>

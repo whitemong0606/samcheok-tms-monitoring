@@ -60,15 +60,26 @@ class GoogleSheetsStorage:
         except Exception:
             pass
 
+        default_alarm_rules = {
+            "THRESHOLD_EXCEEDED": True,
+            "HUNTING": True,
+            "FROZEN_DATA": True,
+            "STOP_ABNORMAL": True,
+            "MISSING_DATA": True
+        }
+
         return {
             "settings": {
                 "bot_token": config.TELEGRAM_BOT_TOKEN,
                 "chat_id": config.TELEGRAM_CHAT_ID,
+                "group_chat_id": config.TELEGRAM_GROUP_CHAT_ID,
                 "discord_webhook_url": "",
                 "google_sheet_id": config.GOOGLE_SHEET_ID,
                 "report_time": config.DAILY_REPORT_TIME,
                 "limits": limits_dict,
-                "template": config.DEFAULT_TEMPLATE
+                "alarm_rules": default_alarm_rules,
+                "template": config.DEFAULT_TEMPLATE,
+                "last_daily_report_date": ""
             },
             "logs": [],
             "telemetry_cache": {},

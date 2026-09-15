@@ -24,8 +24,15 @@ class AlarmEvent:
         }
 
 class StackAnalyzer:
-    def __init__(self, limits: Dict[str, float] = None):
+    def __init__(self, limits: Dict[str, float] = None, alarm_rules: Dict[str, bool] = None):
         self.limits = limits or default_limits.model_dump()
+        self.alarm_rules = alarm_rules if alarm_rules is not None else {
+            "THRESHOLD_EXCEEDED": True,
+            "HUNTING": True,
+            "FROZEN_DATA": True,
+            "STOP_ABNORMAL": True,
+            "MISSING_DATA": True
+        }
 
     def classify_operating_state(self, df: pd.DataFrame) -> pd.DataFrame:
         """
@@ -102,22 +109,23 @@ class StackAnalyzer:
         alarms: List[AlarmEvent] = []
         
         # 1. 데이터 수집 검증: 2시간(4회) 연속 결측 알람 (Missing Data)
-        missing_streak = 0
-        for idx, row in df.iterrows():
-            is_missing = all(pd.isna(row.get(f)) for f in config.FACTORS)
-            if is_missing:
-                missing_streak += 1
-                if missing_streak >= config.MISSING_DATA_COUNT:
-                    alarms.append(AlarmEvent(
-                        timestamp=str(row["timestamp"]),
-                        outlet=outlet_name,
-                        factor="ALL",
-                        alarm_type="MISSING_DATA",
-                        message=f"최근 2시간({missing_streak * 30}분) 연속 데이터 미수신(결측) 발생",
-                        level="CRITICAL"
-                    ))
-            else:
-                missing_streak = 0
+        if self.alarm_rules.get("MISSING_DATA", True):
+            missing_streak = 0
+            for idx, row in df.iterrows():
+                is_missing = all(pd.isna(row.get(f)) for f in config.FACTORS)
+                if is_missing:
+                    missing_streak += 1
+                    if missing_streak >= config.MISSING_DATA_COUNT:
+                        alarms.append(AlarmEvent(
+                            timestamp=str(row["timestamp"]),
+                            outlet=outlet_name,
+                            factor="ALL",
+                            alarm_type="MISSING_DATA",
+                            message=f"최근 2시간({missing_streak * 30}분) 연속 데이터 미수신(결측) 발생",
+                            level="CRITICAL"
+                        ))
+                else:
+                    missing_streak = 0
 
         for factor in config.FACTORS:
             if factor not in df.columns:
@@ -126,140 +134,142 @@ class StackAnalyzer:
             # 문자열 찌꺼기(가동중지 등)가 혼입되어도 안전하게 숫자 변환 (비숫자는 NaN 처리)
             series = pd.to_numeric(df[factor], errors="coerce")
 
-            
             # 2. 기준치 초과 알람 (Threshold Exceeded)
-            limit = self.limits.get(factor)
-            if limit is not None and factor in ["TSP", "NOX", "SOX"]:
-                exceeded_mask = (series > limit) & (state_series == "OPERATING")
-                for idx in df[exceeded_mask].index:
-                    row = df.loc[idx]
-                    alarms.append(AlarmEvent(
-                        timestamp=str(row["timestamp"]),
-                        outlet=outlet_name,
-                        factor=factor,
-                        alarm_type="THRESHOLD_EXCEEDED",
-                        message=f"{factor} 배출 허용 기준치 초과! (측정값: {row[factor]:.2f}, 기준치: {limit:.2f})",
-                        level="CRITICAL"
-                    ))
-
-            # 3. 급변동(헌팅) 알람 (Hunting)
-            hunting_thresh = config.HUNTING_THRESHOLDS.get(factor, 0.5)
-            rolling_avg = series.shift(1).rolling(window=12, min_periods=3).mean()
-            
-            for idx in range(len(df)):
-                val = series.iloc[idx]
-                avg = rolling_avg.iloc[idx]
-                st_val = state_series.iloc[idx]
-                
-                if st_val == "OPERATING" and pd.notna(val) and pd.notna(avg) and avg >= 0.5:
-                    rel_change = abs(val - avg) / avg
-                    if rel_change >= hunting_thresh:
-                        row = df.iloc[idx]
+            if self.alarm_rules.get("THRESHOLD_EXCEEDED", True):
+                limit = self.limits.get(factor)
+                if limit is not None and factor in ["TSP", "NOX", "SOX"]:
+                    exceeded_mask = (series > limit) & (state_series == "OPERATING")
+                    for idx in df[exceeded_mask].index:
+                        row = df.loc[idx]
                         alarms.append(AlarmEvent(
                             timestamp=str(row["timestamp"]),
                             outlet=outlet_name,
                             factor=factor,
-                            alarm_type="HUNTING",
-                            message=f"{factor} 급변동(헌팅) 감지! (이전 평균: {avg:.2f}, 현재값: {val:.2f}, 변동률: {rel_change*100:.1f}%)",
-                            level="WARNING"
+                            alarm_type="THRESHOLD_EXCEEDED",
+                            message=f"{factor} 배출 허용 기준치 초과! (측정값: {row[factor]:.2f}, 기준치: {limit:.2f})",
+                            level="CRITICAL"
                         ))
+
+            # 3. 급변동(헌팅) 알람 (Hunting)
+            if self.alarm_rules.get("HUNTING", True):
+                hunting_thresh = config.HUNTING_THRESHOLDS.get(factor, 0.5)
+                rolling_avg = series.shift(1).rolling(window=12, min_periods=3).mean()
+                
+                for idx in range(len(df)):
+                    val = series.iloc[idx]
+                    avg = rolling_avg.iloc[idx]
+                    st_val = state_series.iloc[idx]
+                    
+                    if st_val == "OPERATING" and pd.notna(val) and pd.notna(avg) and avg >= 0.5:
+                        rel_change = abs(val - avg) / avg
+                        if rel_change >= hunting_thresh:
+                            row = df.iloc[idx]
+                            alarms.append(AlarmEvent(
+                                timestamp=str(row["timestamp"]),
+                                outlet=outlet_name,
+                                factor=factor,
+                                alarm_type="HUNTING",
+                                message=f"{factor} 급변동(헌팅) 감지! (이전 평균: {avg:.2f}, 현재값: {val:.2f}, 변동률: {rel_change*100:.1f}%)",
+                                level="WARNING"
+                            ))
 
             # 4. 고정 데이터 알람 (Frozen Data) - 정상 운전 상태(OPERATING) 및 수치 0 초과 시에만 감지
-            consecutive_count = 1
-            last_val = None
-            
-            for idx in range(len(df)):
-                val = series.iloc[idx]
-                st_val = state_series.iloc[idx]
-                row_time = str(df["timestamp"].iloc[idx])
-                row_status = str(df["status"].iloc[idx]) if "status" in df.columns else ""
+            if self.alarm_rules.get("FROZEN_DATA", True):
+                consecutive_count = 1
+                last_val = None
                 
-                # 계측기 상태가 보수/점검/자료확인/가동중지인 행은 알람 감지 대상에서 제외
-                if st_val in ["MAINTENANCE", "STOP"] or any(k in row_status for k in ["보수", "점검", "자료확인", "정지", "가동중지"]):
-                    consecutive_count = 1
-                    last_val = None
-                    continue
-
-                if pd.notna(val) and val == last_val:
-                    consecutive_count += 1
-                else:
-                    consecutive_count = 1
-                    last_val = val
+                for idx in range(len(df)):
+                    val = series.iloc[idx]
+                    st_val = state_series.iloc[idx]
+                    row_time = str(df["timestamp"].iloc[idx])
+                    row_status = str(df["status"].iloc[idx]) if "status" in df.columns else ""
                     
-                if consecutive_count >= config.FROZEN_DATA_COUNT:
-                    if factor in ["SOX", "NOX", "TSP"]:
-                        if val is not None and float(val) > 0.0:
-                            alarms.append(AlarmEvent(
-                                timestamp=row_time,
-                                outlet=outlet_name,
-                                factor=factor,
-                                alarm_type="FROZEN_DATA",
-                                message=f"{factor} 고정 데이터 알람 (0이 아닌 상수값 {val:.2f}가 10회 연속 동일 지시)",
-                                level="WARNING"
-                            ))
+                    # 계측기 상태가 보수/점검/자료확인/가동중지인 행은 알람 감지 대상에서 제외
+                    if st_val in ["MAINTENANCE", "STOP"] or any(k in row_status for k in ["보수", "점검", "자료확인", "정지", "가동중지"]):
+                        consecutive_count = 1
+                        last_val = None
+                        continue
+
+                    if pd.notna(val) and val == last_val:
+                        consecutive_count += 1
                     else:
-                        # Flow / Temp / O2 등도 수치 0 초과인 유효 동작 값일 때만 고정 데이터 알람 감지
-                        if val is not None and float(val) > 0.0:
+                        consecutive_count = 1
+                        last_val = val
+                        
+                    if consecutive_count >= config.FROZEN_DATA_COUNT:
+                        if factor in ["SOX", "NOX", "TSP"]:
+                            if val is not None and float(val) > 0.0:
+                                alarms.append(AlarmEvent(
+                                    timestamp=row_time,
+                                    outlet=outlet_name,
+                                    factor=factor,
+                                    alarm_type="FROZEN_DATA",
+                                    message=f"{factor} 고정 데이터 알람 (0이 아닌 상수값 {val:.2f}가 10회 연속 동일 지시)",
+                                    level="WARNING"
+                                ))
+                        else:
+                            # Flow / Temp / O2 등도 수치 0 초과인 유효 동작 값일 때만 고정 데이터 알람 감지
+                            if val is not None and float(val) > 0.0:
+                                alarms.append(AlarmEvent(
+                                    timestamp=row_time,
+                                    outlet=outlet_name,
+                                    factor=factor,
+                                    alarm_type="FROZEN_DATA",
+                                    message=f"{factor} 고정 데이터 알람 (수치 {val:.2f}가 10회 연속 동일 지시)",
+                                    level="WARNING"
+                                ))
+                
+                if factor in ["SOX", "NOX"]:
+                    op_df = df[state_series == "OPERATING"]
+                    if len(op_df) >= 20 and factor in op_df.columns:
+                        num_op = pd.to_numeric(op_df[factor], errors="coerce")
+                        zero_ratio = (num_op == 0.0).mean()
+                        if zero_ratio >= 0.95:
                             alarms.append(AlarmEvent(
-                                timestamp=row_time,
+                                timestamp=str(df["timestamp"].iloc[-1]),
                                 outlet=outlet_name,
                                 factor=factor,
                                 alarm_type="FROZEN_DATA",
-                                message=f"{factor} 고정 데이터 알람 (수치 {val:.2f}가 10회 연속 동일 지시)",
+                                message=f"{factor} 센서 고장 의심 (운전 상태 중 하루 종일 0.00 고정지시 비율 {zero_ratio*100:.1f}%)",
                                 level="WARNING"
                             ))
-            
-            if factor in ["SOX", "NOX"]:
-                op_df = df[state_series == "OPERATING"]
-                if len(op_df) >= 20 and factor in op_df.columns:
-                    num_op = pd.to_numeric(op_df[factor], errors="coerce")
-                    zero_ratio = (num_op == 0.0).mean()
-                    if zero_ratio >= 0.95:
-                        alarms.append(AlarmEvent(
-                            timestamp=str(df["timestamp"].iloc[-1]),
-                            outlet=outlet_name,
-                            factor=factor,
-                            alarm_type="FROZEN_DATA",
-                            message=f"{factor} 센서 고장 의심 (운전 상태 중 하루 종일 0.00 고정지시 비율 {zero_ratio*100:.1f}%)",
-                            level="WARNING"
-                        ))
 
         # 5. 정지 중 이상 데이터 알람 (Stop-State Abnormal Data)
-        stop_df = df[state_series == "STOP"]
-        for idx in stop_df.index:
-            row = df.loc[idx]
-            # API 데이터에서 O2/Flow/Temp가 None일 수 있으므로 안전 변환
-            def safe_f(v, default=0.0):
-                try:
-                    return float(v) if v is not None and v != "" else default
-                except (TypeError, ValueError):
-                    return default
-            temp = safe_f(row.get("Temp"))
-            flow = safe_f(row.get("Flow"))
-            nox  = safe_f(row.get("NOX"))
-            sox  = safe_f(row.get("SOX"))
-            tsp  = safe_f(row.get("TSP"))
+        if self.alarm_rules.get("STOP_ABNORMAL", True):
+            stop_df = df[state_series == "STOP"]
+            for idx in stop_df.index:
+                row = df.loc[idx]
+                # API 데이터에서 O2/Flow/Temp가 None일 수 있으므로 안전 변환
+                def safe_f(v, default=0.0):
+                    try:
+                        return float(v) if v is not None and v != "" else default
+                    except (TypeError, ValueError):
+                        return default
+                temp = safe_f(row.get("Temp"))
+                flow = safe_f(row.get("Flow"))
+                nox  = safe_f(row.get("NOX"))
+                sox  = safe_f(row.get("SOX"))
+                tsp  = safe_f(row.get("TSP"))
 
-            
-            abnormal_factors = []
-            if temp > 80.0 and flow > 1000.0:
-                abnormal_factors.append(f"고온({temp:.1f}°C)/고유량({flow:.0f}m³/h)")
-            if nox > 1.0:
-                abnormal_factors.append(f"NOX({nox:.1f}ppm)")
-            if sox > 1.0:
-                abnormal_factors.append(f"SOX({sox:.1f}ppm)")
-            if tsp > 1.0:
-                abnormal_factors.append(f"TSP({tsp:.1f}mg/m³)")
+                abnormal_factors = []
+                if temp > 80.0 and flow > 1000.0:
+                    abnormal_factors.append(f"고온({temp:.1f}°C)/고유량({flow:.0f}m³/h)")
+                if nox > 1.0:
+                    abnormal_factors.append(f"NOX({nox:.1f}ppm)")
+                if sox > 1.0:
+                    abnormal_factors.append(f"SOX({sox:.1f}ppm)")
+                if tsp > 1.0:
+                    abnormal_factors.append(f"TSP({tsp:.1f}mg/m³)")
 
-            if abnormal_factors:
-                alarms.append(AlarmEvent(
-                    timestamp=str(row["timestamp"]),
-                    outlet=outlet_name,
-                    factor="STOP_MONITOR",
-                    alarm_type="STOP_ABNORMAL",
-                    message=f"정지 상태 중 비Zero 이상 수치 지속 송출! [{', '.join(abnormal_factors)}]",
-                    level="WARNING"
-                ))
+                if abnormal_factors:
+                    alarms.append(AlarmEvent(
+                        timestamp=str(row["timestamp"]),
+                        outlet=outlet_name,
+                        factor="STOP_MONITOR",
+                        alarm_type="STOP_ABNORMAL",
+                        message=f"정지 상태 중 비Zero 이상 수치 지속 송출! [{', '.join(abnormal_factors)}]",
+                        level="WARNING"
+                    ))
                 
         unique_alarms = []
         seen = set()

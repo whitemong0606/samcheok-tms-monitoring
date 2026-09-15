@@ -39,6 +39,15 @@ except Exception as e:
     STARTUP_ERROR = traceback.format_exc()
     analyzer = None
 
+def get_analyzer() -> StackAnalyzer:
+    try:
+        st = storage.get_settings()
+        limits = st.get("limits", default_limits.model_dump() if hasattr(default_limits, "model_dump") else default_limits.dict())
+        rules = st.get("alarm_rules", None)
+        return StackAnalyzer(limits=limits, alarm_rules=rules)
+    except Exception:
+        return StackAnalyzer()
+
 app = FastAPI(
     title="굴뚝 배출가스 자동감시 및 텔레그램 알림 시스템",
     version="1.0.0"
@@ -592,10 +601,11 @@ def get_analysis_data(
         outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
         reports = {}
         all_alarms = []
+        curr_analyzer = get_analyzer()
 
         for out in outlets:
             out_df = df_5m[df_5m["outlet"] == out] if not df_5m.empty and "outlet" in df_5m.columns else pd.DataFrame()
-            rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
+            rep = curr_analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
             reports[out] = rep
             if rep.get("raw_alarms"):
                 all_alarms.extend([a.model_dump() if hasattr(a, "model_dump") else a for a in rep["raw_alarms"]])
@@ -713,10 +723,11 @@ def fetch_cleansys_data(
         outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
         reports = {}
         all_alarms = []
+        curr_analyzer = get_analyzer()
 
         for out in outlets:
             out_df = df_5m[df_5m["outlet"] == out] if not df_5m.empty and "outlet" in df_5m.columns else pd.DataFrame()
-            rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
+            rep = curr_analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
             reports[out] = rep
             if rep.get("raw_alarms"):
                 all_alarms.extend(rep["raw_alarms"])
@@ -742,25 +753,27 @@ def fetch_cleansys_data(
 @app.get("/api/cron/fetch-30m")
 def cron_fetch_30m():
     """
-    30분 주기 Vercel Cron 스케줄러:
-    100% 순수 CleanSYS Open API 실측 데이터를 수신하여 구글 시트(YYYY-MM-DD 탭)에 자동 누적 저장 (Append)
+    30분/15분 주기 스케줄러:
+    1. 100% 순수 CleanSYS Open API 실측 데이터를 수신하여 구글 시트(YYYY-MM-DD 탭)에 자동 누적 저장 (Append)
+    2. 설정된 정기 보고 시간(report_time) 도달 시 일일 정기 리포트 텔레그램 자동 발송
     """
     try:
         plant_name = "한국남부발전(주) 삼척빛드림본부"
         region_name = "강원도 삼척시"
         
         df_raw = cleansys_client.get_raw_telemetry_dataframe(plant_name, region_name)
-        if df_raw.empty:
-            return {"success": False, "message": "CleanSYS API 실시간 응답 데이터 없음"}
-
         today_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
-        saved = storage.append_telemetry_data(df_raw, today_str)
+        saved = storage.append_telemetry_data(df_raw, today_str) if not df_raw.empty else False
+
+        # 정기 리포트 자동 발송 조건 점검 (설정된 정기 보고 시간에 맞춰 1회 발송)
+        daily_rep_res = execute_daily_report(is_forced=False)
 
         return {
             "success": True,
             "fetched_at": datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d %H:%M:%S"),
             "rows_count": len(df_raw),
-            "google_sheets_saved": saved
+            "google_sheets_saved": saved,
+            "daily_report": daily_rep_res
         }
     except Exception as e:
         return {"success": False, "error": f"30분 실측 API 수집 중 오류: {str(e)}"}
@@ -787,10 +800,11 @@ def get_auto_analysis_data(
         outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
         reports = {}
         all_alarms = []
+        curr_analyzer = get_analyzer()
 
         for out in outlets:
             out_df = df_30m[df_30m["outlet"] == out] if not df_30m.empty and "outlet" in df_30m.columns else pd.DataFrame()
-            rep = analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
+            rep = curr_analyzer.generate_daily_report(out_df, out, f"{start_dt_str} ~ {end_dt_str}")
             reports[out] = rep
             if rep.get("raw_alarms"):
                 all_alarms.extend([a.model_dump() if hasattr(a, "model_dump") else a for a in rep["raw_alarms"]])
@@ -833,55 +847,107 @@ def get_auto_analysis_data(
             headers={"Cache-Control": "no-cache, no-store, must-revalidate"}
         )
 
-@app.get("/api/cron/daily-report")
-def cron_daily_report():
+def execute_daily_report(is_forced: bool = False) -> Dict[str, Any]:
     """
-    하루 1회 자동 실행 CRON 스케줄러 (매일 08:00 KST)
+    설정된 정기 보고 시간(report_time, 기본 08:30 KST)에 맞춰 하루 1회 삼척빛드림본부 24시간 실측 데이터를 정밀 분석하고
+    텔레그램 그룹으로 일일 종합 리포트를 자동 발송합니다.
     """
-    try:
-        plant_name = "한국남부발전(주) 삼척빛드림본부"
-        region_name = "강원도 삼척시"
-        
-        df_raw = cleansys_client.get_raw_telemetry_dataframe(plant_name, region_name)
-        date_str = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
+    now_kst = datetime.now(timezone(timedelta(hours=9)))
+    today_str = now_kst.strftime("%Y-%m-%d")
+    curr_time_str = now_kst.strftime("%H:%M")
 
-        sheets_save_result = storage.append_telemetry_data(df_raw, date_str)
-        
-        outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
-        reports_map = {}
-        all_alarms = []
+    settings = storage.get_settings()
+    target_report_time = settings.get("report_time", "08:30")
+    last_sent_date = str(settings.get("last_daily_report_date", ""))
 
-        for out in outlets:
-            out_df = df_raw[df_raw["outlet"] == out] if not df_raw.empty and "outlet" in df_raw.columns else pd.DataFrame()
-            rep = analyzer.generate_daily_report(out_df, out, date_str)
-            storage.save_daily_report(rep)
-            reports_map[out] = rep
-            if rep.get("alarms"):
-                all_alarms.extend(rep["alarms"])
-
-        comprehensive_report = {
-            "date": date_str,
-            "reports": reports_map,
-            "all_alarms": all_alarms,
-            "alarm_count": len(all_alarms)
-        }
-        msg = telegram_bot.render_template(comprehensive_report)
-        telegram_res = telegram_bot.send_group_message(msg)
-
+    # 이미 오늘 발송 완료되었고 강제 실행이 아닌 경우 중복 발송 차단
+    if not is_forced and last_sent_date == today_str:
         return {
             "success": True,
-            "report_date": date_str,
-            "items_count": len(df_raw),
-            "google_sheets_saved": sheets_save_result,
-            "telegram_result": telegram_res,
-            "outlets_processed": list(reports_map.keys())
+            "skipped": True,
+            "message": f"오늘({today_str}) 정기 리포트는 이미 발송되었습니다. (최근 발송일: {last_sent_date})",
+            "report_date": today_str
         }
+
+    # 현재 시간이 설정된 정기 보고 시간 이전이면 대기 (강제 실행이 아닌 경우)
+    if not is_forced and curr_time_str < target_report_time:
+        return {
+            "success": True,
+            "skipped": True,
+            "message": f"현재 시간({curr_time_str})은 설정된 정기 보고 시간({target_report_time}) 이전입니다.",
+            "report_date": today_str
+        }
+
+    plant_name = "한국남부발전(주) 삼척빛드림본부"
+    region_name = "강원도 삼척시"
+
+    # 1. 24시간 실시간 실측 데이터 읽기
+    df_24h, _ = process_date_range_telemetry(today_str, today_str, plant_name, region_name, is_samcheok=True)
+    if df_24h.empty:
+        df_raw = cleansys_client.get_raw_telemetry_dataframe(plant_name, region_name)
+        if not df_raw.empty:
+            df_24h = df_raw
+
+    # 2. 저장된 알람 규칙(alarm_rules) 및 허용 기준치(limits)를 적용하여 배출구별 정기 리포트 생성
+    curr_analyzer = get_analyzer()
+    outlets = ["배출구 1", "배출구 2", "배출구 3", "배출구 4", "배출구 5"]
+    reports_map = {}
+    all_alarms = []
+
+    for out in outlets:
+        out_df = df_24h[df_24h["outlet"] == out] if not df_24h.empty and "outlet" in df_24h.columns else pd.DataFrame()
+        rep = curr_analyzer.generate_daily_report(out_df, out, today_str)
+        storage.save_daily_report(rep)
+        reports_map[out] = rep
+        if rep.get("alarms"):
+            all_alarms.extend(rep["alarms"])
+
+    comprehensive_report = {
+        "date": today_str,
+        "reports": reports_map,
+        "all_alarms": all_alarms,
+        "alarm_count": len(all_alarms)
+    }
+
+    # 3. 텔레그램 그룹 메시지 발송
+    msg = telegram_bot.render_template(comprehensive_report)
+    telegram_res = telegram_bot.send_group_message(msg)
+
+    # 4. 오늘 발송 완료 기록
+    storage.save_settings({"last_daily_report_date": today_str})
+    storage.add_log("INFO", "DAILY_REPORT", f"정기 리포트 텔레그램 발송 완료 ({target_report_time} 설정, {curr_time_str} 실행)", "SUCCESS")
+
+    return {
+        "success": True,
+        "report_date": today_str,
+        "target_time": target_report_time,
+        "sent_time": curr_time_str,
+        "telegram_result": telegram_res,
+        "outlets_processed": list(reports_map.keys()),
+        "alarm_count": len(all_alarms)
+    }
+
+@app.get("/api/cron/daily-report")
+def cron_daily_report(force: bool = False):
+    """
+    하루 1회 정기 리포트 CRON 엔드포인트
+    """
+    try:
+        res = execute_daily_report(is_forced=force)
+        return res
     except Exception as e:
-        return {"success": False, "error": f"일일 자동 수집 및 구글 시트 저장 오류: {str(e)}"}
+        return {"success": False, "error": f"일일 자동 리포트 발송 오류: {str(e)}"}
 
 @app.get("/api/settings")
 def get_settings():
     st = storage.get_settings()
+    default_rules = {
+        "THRESHOLD_EXCEEDED": True,
+        "HUNTING": True,
+        "FROZEN_DATA": True,
+        "STOP_ABNORMAL": True,
+        "MISSING_DATA": True
+    }
     return {
         "success": True,
         "settings": {
@@ -891,7 +957,8 @@ def get_settings():
             "google_sheet_id": st.get("google_sheet_id", config.GOOGLE_SHEET_ID),
             "report_time": st.get("report_time", "08:30"),
             "template": st.get("template", config.DEFAULT_TEMPLATE),
-            "limits": st.get("limits", default_limits.model_dump())
+            "limits": st.get("limits", default_limits.model_dump() if hasattr(default_limits, "model_dump") else default_limits.dict()),
+            "alarm_rules": st.get("alarm_rules", default_rules)
         }
     }
 
