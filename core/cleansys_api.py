@@ -52,27 +52,28 @@ class CleanSysAPIClient:
         if stack_code:
             url += f"&stackCode={quote(str(stack_code))}"
 
-        try:
-            response = requests.get(url, timeout=5, headers={"User-Agent": "Mozilla/5.0"})
-            if response.status_code == 200:
-                try:
-                    data = response.json()
-                    header = data.get("response", {}).get("header", {})
-                    result_code = str(header.get("resultCode", ""))
-                    
-                    if result_code in ["0", "00", "NORMAL_CODE"]:
-                        body = data.get("response", {}).get("body", {})
-                        items_raw = body.get("items", [])
-                        if isinstance(items_raw, dict):
-                            items_raw = items_raw.get("item", [])
-                        if isinstance(items_raw, dict):
-                            items_raw = [items_raw]
-                        if isinstance(items_raw, list) and len(items_raw) > 0:
-                            return items_raw
-                except Exception as e:
-                    print(f"[CleanSysAPI] JSON 파싱 오류: {e}")
-        except Exception as e:
-            print(f"[CleanSysAPI] Open API 통신 오류: {e}")
+        for attempt in range(2):
+            try:
+                response = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+                if response.status_code == 200:
+                    try:
+                        data = response.json()
+                        header = data.get("response", {}).get("header", {})
+                        result_code = str(header.get("resultCode", ""))
+                        
+                        if result_code in ["0", "00", "NORMAL_CODE"]:
+                            body = data.get("response", {}).get("body", {})
+                            items_raw = body.get("items", [])
+                            if isinstance(items_raw, dict):
+                                items_raw = items_raw.get("item", [])
+                            if isinstance(items_raw, dict):
+                                items_raw = [items_raw]
+                            if isinstance(items_raw, list) and len(items_raw) > 0:
+                                return items_raw
+                    except Exception as e:
+                        print(f"[CleanSysAPI] JSON 파싱 오류: {e}")
+            except Exception as e:
+                print(f"[CleanSysAPI] Open API 통신 시도 {attempt+1} 실패: {e}")
             
         return []
 
@@ -97,10 +98,10 @@ class CleanSysAPIClient:
                 {"stack_code": "5", "fact_manage_nm": "한국남부발전(주) 삼척빛드림본부", "area_nm": "강원도 삼척시", "mesure_dt": now_dt, "tsp_mesure_value": "5.38", "nox_mesure_value": "0.0", "sox_mesure_value": "0.0", "tsp_exhst_perm_stdr_value": 15.0, "nox_exhst_perm_stdr_value": 50.0, "sox_exhst_perm_stdr_value": 40.0},
             ]
 
-        # 삼척빛드림본부 대상 필터링
+        # 삼척빛드림본부 대상 엄격 필터링 (타 사업장 혼입 및 배출구 번호 충돌 방지)
         samcheok_items = [
             it for it in raw_items 
-            if "삼척" in str(it.get("fact_manage_nm", "")) or "삼척" in str(it.get("area_nm", "")) or "남부" in str(it.get("fact_manage_nm", ""))
+            if "삼척" in str(it.get("fact_manage_nm", "")) or "삼척" in str(it.get("area_nm", ""))
         ]
         items_to_use = samcheok_items if samcheok_items else raw_items
 

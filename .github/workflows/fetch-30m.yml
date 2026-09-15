@@ -2,8 +2,8 @@ name: 30m CleanSYS Real-Time API Cron
 
 on:
   schedule:
-    # Runs every 30 minutes (00 and 30 min of every hour)
-    - cron: '0,30 * * * *'
+    # 0분, 30분 정각의 GitHub 전세계 큐 정체 및 드롭(누락)을 방지하기 위해 15분 간격 비혼잡 시각(7, 22, 37, 52분)에 실행
+    - cron: '7,22,37,52 * * * *'
   workflow_dispatch:  # 수동 실행 버튼도 제공
 
 jobs:
@@ -16,6 +16,8 @@ jobs:
           HTTP_RESPONSE=$(curl -s -o /tmp/response_body.txt -w "%{http_code}" \
             -X GET "https://sctmsmonitor.vercel.app/api/cron/fetch-30m" \
             -H "User-Agent: GitHub-Actions-Cron" \
+            --retry 2 \
+            --retry-delay 3 \
             --max-time 60)
           BODY=$(cat /tmp/response_body.txt)
           echo "HTTP Status: $HTTP_RESPONSE"
@@ -25,3 +27,10 @@ jobs:
             exit 1
           fi
           echo "=== 수집 완료 ==="
+
+      - name: Keepalive Workflow
+        uses: gautamkrishnar/keepalive-workflow@v2
+        with:
+          committer_username: "github-actions[bot]"
+          committer_email: "github-actions[bot]@users.noreply.github.com"
+

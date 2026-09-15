@@ -643,10 +643,20 @@ def process_date_range_telemetry(start_date_str: str, end_date_str: str, plant_n
 
     dfs = []
     sources = set()
+    today_kst = datetime.now(timezone(timedelta(hours=9))).strftime("%Y-%m-%d")
 
     for d_str in date_list:
         day_df = None
         if is_samcheok:
+            # 당일(오늘)이 조회 범위에 포함된 경우, CleanSYS 공단 최신 실측 30분 데이터를 즉시 동기화 적재 (누락 방지)
+            if d_str == today_kst:
+                try:
+                    df_live = cleansys_client.get_raw_telemetry_dataframe(plant_name, region_name)
+                    if df_live is not None and not df_live.empty:
+                        storage.append_telemetry_data(df_live, today_kst)
+                except Exception as e:
+                    print(f"[AutoFetch on View] 실시간 최신 동기화 예외: {e}")
+
             day_df = storage.read_telemetry_data(d_str)
             if day_df is not None and not day_df.empty:
                 sources.add("GOOGLE_SHEETS")
@@ -824,7 +834,6 @@ def get_auto_analysis_data(
         )
 
 @app.get("/api/cron/daily-report")
-@app.get("/api/cron/fetch-30m")
 def cron_daily_report():
     """
     하루 1회 자동 실행 CRON 스케줄러 (매일 08:00 KST)
