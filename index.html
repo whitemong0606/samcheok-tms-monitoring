@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
     <!-- Custom Style -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20260916_v3">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260916_v4">
 </head>
 <body>
     <div class="app-container">
@@ -410,9 +410,14 @@
                     <div class="card glass-card settings-card">
                         <div class="card-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
                             <h3 style="font-size:0.98rem; margin:0;"><i class="fa-solid fa-sliders"></i> 봇 & 시스템 연동</h3>
-                            <button type="button" id="btn-save-settings" class="btn btn-sm" style="background:#f59e0b; color:#000; font-weight:700; border:none; padding:5px 12px; border-radius:6px; cursor:pointer;" onclick="toggleSettingsLock(event)">
-                                <i class="fa-solid fa-lock"></i> 설정 변경
-                            </button>
+                            <div style="display:flex; align-items:center; gap:6px;">
+                                <button type="button" id="btn-cancel-settings" class="btn btn-secondary btn-sm" style="display:none; padding:5px 12px; border-radius:6px; font-weight:600; cursor:pointer;" onclick="cancelSettingsEdit()">
+                                    <i class="fa-solid fa-xmark"></i> 취소
+                                </button>
+                                <button type="button" id="btn-save-settings" class="btn btn-sm" style="background:#f59e0b; color:#000; font-weight:700; border:none; padding:5px 12px; border-radius:6px; cursor:pointer;" onclick="toggleSettingsLock(event)">
+                                    <i class="fa-solid fa-lock"></i> 설정 변경
+                                </button>
+                            </div>
                         </div>
 
                         <!-- 보안 잠금 안내 배너 -->
@@ -422,24 +427,29 @@
 
                         <form id="settings-form" onsubmit="handleSettingsFormSubmit(event)" style="display:flex; flex-direction:column; gap:8px;">
                             <div class="form-group" style="margin-bottom:0;">
-                                <label for="bot-token" style="font-size:0.78rem;">Telegram Bot Token</label>
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
+                                    <label for="bot-token" style="font-size:0.78rem; margin:0;">Telegram Bot Token</label>
+                                    <button type="button" id="btn-toggle-token-vis" onclick="toggleTokenVisibility()" style="background:none; border:none; color:var(--accent-cyan); font-size:0.72rem; cursor:pointer; padding:0 2px; display:inline-flex; align-items:center; gap:4px;" title="토큰 가림/표시 전환">
+                                        <i class="fa-solid fa-eye-slash" id="icon-toggle-token"></i> <span id="text-toggle-token">숨기기</span>
+                                    </button>
+                                </div>
                                 <div class="input-with-icon">
                                     <i class="fa-solid fa-key" style="font-size:0.78rem;"></i>
-                                    <input type="password" id="bot-token" class="form-input" placeholder="봇 토큰 입력" disabled style="padding:5px 8px 5px 30px; font-size:0.8rem;">
+                                    <input type="text" id="bot-token" class="form-input" placeholder="봇 토큰 입력" disabled style="padding:5px 8px 5px 30px; font-size:0.8rem; font-family:monospace;">
                                 </div>
                             </div>
                             <div class="form-group" style="margin-bottom:0;">
                                 <label for="chat-id" style="font-size:0.78rem;"><i class="fa-solid fa-user-shield"></i> 개인 Chat ID (테스트 발송 전용)</label>
                                 <div class="input-with-icon">
                                     <i class="fa-solid fa-user" style="font-size:0.78rem;"></i>
-                                    <input type="text" id="chat-id" class="form-input" placeholder="개인 Chat ID (예: 123456789)" disabled style="padding:5px 8px 5px 30px; font-size:0.8rem;">
+                                    <input type="text" id="chat-id" class="form-input" placeholder="개인 Chat ID (예: 8899508631)" disabled style="padding:5px 8px 5px 30px; font-size:0.8rem; font-family:monospace; font-weight:600; color:var(--accent-cyan);">
                                 </div>
                             </div>
                             <div class="form-group" style="margin-bottom:0;">
                                 <label for="group-chat-id" style="font-size:0.78rem;"><i class="fa-solid fa-people-group"></i> 그룹 Chat ID (매일 정기 리포트 공유)</label>
                                 <div class="input-with-icon">
                                     <i class="fa-solid fa-users" style="font-size:0.78rem;"></i>
-                                    <input type="text" id="group-chat-id" class="form-input" placeholder="-100... 그룹 Chat ID" disabled style="padding:5px 8px 5px 30px; font-size:0.8rem;">
+                                    <input type="text" id="group-chat-id" class="form-input" placeholder="-100... 그룹 Chat ID" disabled style="padding:5px 8px 5px 30px; font-size:0.8rem; font-family:monospace;">
                                 </div>
                             </div>
                             <div class="form-group" style="margin-bottom:0;">
@@ -650,6 +660,6 @@
     </div>
 
     <!-- Custom Script -->
-    <script src="/static/js/app.js?v=20260916_v3"></script>
+    <script src="/static/js/app.js?v=20260916_v4"></script>
 </body>
 </html>

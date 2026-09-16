@@ -42,6 +42,8 @@ function initTabs() {
             document.getElementById(target).classList.add('active');
 
             if (target === 'tab-settings') {
+                _isSettingsUnlocked = false;
+                updateSettingsUIState();
                 loadSettings();
                 loadLogs();
             }
@@ -980,6 +982,8 @@ function initSettings() {
 }
 
 let _isSettingsUnlocked = false;
+let _lastLoadedSettings = null;
+let _pinModalTarget = 'page';
 
 function isAdminLoggedIn() {
     return sessionStorage.getItem('tms_admin_logged_in') === 'true';
@@ -993,7 +997,6 @@ function checkAdminLoginState() {
     const navAnalysis = document.querySelector('.nav-tab[data-tab="tab-analysis"]');
 
     if (isAdminLoggedIn()) {
-        _isSettingsUnlocked = true;
         if (navSettings) navSettings.style.display = 'inline-flex';
         if (btnAuth) {
             btnAuth.innerHTML = '<i class="fa-solid fa-shield-halved" style="color:#10b981;"></i> 관리자 로그아웃';
@@ -1027,10 +1030,11 @@ window.isAdminLoggedIn = isAdminLoggedIn;
 function handleAdminAuthClick() {
     if (isAdminLoggedIn()) {
         sessionStorage.removeItem('tms_admin_logged_in');
+        _isSettingsUnlocked = false;
         showToast('🔒 관리자 로그아웃 되었습니다. 봇 설정 메뉴가 숨김 처리됩니다.');
         checkAdminLoginState();
     } else {
-        openPinModal();
+        openPinModal('page');
     }
 }
 window.handleAdminAuthClick = handleAdminAuthClick;
@@ -1049,31 +1053,40 @@ function setSettingsFormDisabled(disabled) {
 }
 
 function updateSettingsUIState() {
-    const btn = document.getElementById('btn-save-settings');
+    const btnSave = document.getElementById('btn-save-settings');
+    const btnCancel = document.getElementById('btn-cancel-settings');
     const banner = document.getElementById('settings-lock-banner');
     
-    if (isAdminLoggedIn()) {
+    if (_isSettingsUnlocked) {
         setSettingsFormDisabled(false);
-        if (btn) {
-            btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장';
-            btn.style.background = '#10b981';
-            btn.style.color = '#fff';
+        if (btnSave) {
+            btnSave.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장';
+            btnSave.style.background = '#10b981';
+            btnSave.style.color = '#fff';
+            btnSave.title = '수정된 설정을 영구 저장합니다.';
+        }
+        if (btnCancel) {
+            btnCancel.style.display = 'inline-flex';
         }
         if (banner) {
-            banner.innerHTML = '<i class="fa-solid fa-lock-open" style="color:#10b981;"></i> <b style="color:#10b981;">관리자 모드 활성화됨:</b> 설정값을 수정한 후 상단의 <b>[설정 저장]</b>을 누르면 구글 시트에 안전하게 영구 저장됩니다.';
+            banner.innerHTML = '<i class="fa-solid fa-lock-open" style="color:#10b981;"></i> <b style="color:#10b981;">편집 모드 활성화됨 (2차 잠금 해제):</b> 설정값을 수정한 후 <b>[설정 저장]</b>을 누르세요. 취소하려면 <b>[취소]</b>를 누르세요.';
             banner.style.background = 'rgba(16,185,129,0.12)';
             banner.style.border = '1px solid rgba(16,185,129,0.3)';
             banner.style.color = '#a7f3d0';
         }
     } else {
         setSettingsFormDisabled(true);
-        if (btn) {
-            btn.innerHTML = '<i class="fa-solid fa-lock"></i> 설정 변경';
-            btn.style.background = '#f59e0b';
-            btn.style.color = '#000';
+        if (btnSave) {
+            btnSave.innerHTML = '<i class="fa-solid fa-lock"></i> 설정 변경';
+            btnSave.style.background = '#f59e0b';
+            btnSave.style.color = '#000';
+            btnSave.title = '설정을 수정하려면 클릭 후 비밀번호(77137713)를 입력하세요.';
+        }
+        if (btnCancel) {
+            btnCancel.style.display = 'none';
         }
         if (banner) {
-            banner.innerHTML = '<i class="fa-solid fa-shield-halved"></i> <b>보안 잠금 상태:</b> 제3자의 설정 변경을 방지하기 위해 비활성화되어 있습니다. 수정하려면 우측 <b>[설정 변경]</b>을 누르세요.';
+            banner.innerHTML = '<i class="fa-solid fa-shield-halved"></i> <b>보안 잠금 상태:</b> 제3자의 변경을 방지하기 위해 비활성화되어 있습니다. 수정하려면 우측 <b>[설정 변경]</b>을 누르세요.';
             banner.style.background = 'rgba(245,158,11,0.12)';
             banner.style.border = '1px solid rgba(245,158,11,0.3)';
             banner.style.color = '#fef08a';
@@ -1081,12 +1094,28 @@ function updateSettingsUIState() {
     }
 }
 
-function openPinModal() {
+function openPinModal(target = 'page') {
+    _pinModalTarget = target;
     const modal = document.getElementById('admin-pin-modal');
     const input = document.getElementById('admin-pin-input');
     const err = document.getElementById('pin-error-msg');
+    const titleEl = modal?.querySelector('.modal-header h4');
+    const descEl = modal?.querySelector('.modal-body p');
+    const submitBtn = modal?.querySelector('.modal-footer .btn-primary');
+
     if (err) err.style.display = 'none';
     if (input) input.value = '';
+
+    if (target === 'settings') {
+        if (titleEl) titleEl.innerHTML = '<i class="fa-solid fa-key" style="color:var(--accent-amber);"></i> 설정 변경 이중잠금 (2차 인증)';
+        if (descEl) descEl.innerHTML = '봇 토큰, Chat ID 등 설정을 수정하려면 <b>관리자 비밀번호(77137713)</b>를 입력하세요.';
+        if (submitBtn) submitBtn.innerHTML = '<i class="fa-solid fa-unlock"></i> 잠금 해제 및 수정';
+    } else {
+        if (titleEl) titleEl.innerHTML = '<i class="fa-solid fa-shield-halved" style="color:var(--accent-amber);"></i> 관리자 인증';
+        if (descEl) descEl.innerHTML = '텔레그램 봇 설정 및 로그 메뉴에 접근하려면 <b>관리자 비밀번호(77137713)</b>를 입력하세요.';
+        if (submitBtn) submitBtn.innerHTML = '<i class="fa-solid fa-lock-open"></i> 관리자 로그인';
+    }
+
     if (modal) {
         modal.style.display = 'flex';
         setTimeout(() => {
@@ -1109,15 +1138,23 @@ function verifyAdminPin() {
 
     if (val === '77137713') {
         sessionStorage.setItem('tms_admin_logged_in', 'true');
-        _isSettingsUnlocked = true;
         closePinModal();
         checkAdminLoginState();
-        showToast('🔓 관리자 인증 성공! [Bot 설정 및 로그] 메뉴가 활성화되었습니다.');
-        
-        // 봇 설정 탭으로 자동 전환 및 최신 설정 로드
-        const navSettings = document.getElementById('nav-tab-settings');
-        if (navSettings) {
-            navSettings.click();
+
+        if (_pinModalTarget === 'settings') {
+            _isSettingsUnlocked = true;
+            updateSettingsUIState();
+            showToast('🔓 2차 인증 성공: 설정 입력창이 활성화되었습니다. 수정 후 [설정 저장]을 누르세요.');
+            const tokenInput = document.getElementById('bot-token');
+            if (tokenInput) tokenInput.focus();
+        } else {
+            _isSettingsUnlocked = false;
+            updateSettingsUIState();
+            showToast('🔓 관리자 인증 성공! [Bot 설정 및 로그] 메뉴가 활성화되었습니다.');
+            const navSettings = document.getElementById('nav-tab-settings');
+            if (navSettings) {
+                navSettings.click();
+            }
         }
     } else {
         if (err) err.style.display = 'block';
@@ -1130,27 +1167,96 @@ function verifyAdminPin() {
 }
 window.verifyAdminPin = verifyAdminPin;
 
+function toggleTokenVisibility() {
+    const input = document.getElementById('bot-token');
+    const icon = document.getElementById('icon-toggle-token');
+    const text = document.getElementById('text-toggle-token');
+    if (!input) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.className = 'fa-solid fa-eye-slash';
+        if (text) text.textContent = '숨기기';
+    } else {
+        input.type = 'password';
+        if (icon) icon.className = 'fa-solid fa-eye';
+        if (text) text.textContent = '보기';
+    }
+}
+window.toggleTokenVisibility = toggleTokenVisibility;
+
+function cancelSettingsEdit() {
+    if (_lastLoadedSettings) {
+        restoreSettingsValues(_lastLoadedSettings);
+    }
+    _isSettingsUnlocked = false;
+    updateSettingsUIState();
+    
+    const resultDiv = document.getElementById('settings-save-result');
+    if (resultDiv) resultDiv.style.display = 'none';
+
+    showToast('설정 수정이 취소되었습니다. (이전 값 복원)');
+}
+window.cancelSettingsEdit = cancelSettingsEdit;
+
 async function toggleSettingsLock(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
-    if (!isAdminLoggedIn()) {
-        openPinModal();
-    } else {
-        // 이미 관리자 로그인 상태이면 바로 설정 저장 실행
+    if (_isSettingsUnlocked) {
+        // 이미 2차 잠금이 해제된 상태(설정 저장 버튼)에서는 저장 실행
         await saveSettings(e);
+    } else {
+        // 잠겨있는 상태(설정 변경 버튼)에서는 비밀번호 77137713 입력 요구
+        openPinModal('settings');
     }
 }
 window.toggleSettingsLock = toggleSettingsLock;
 
 function handleSettingsFormSubmit(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
-    if (isAdminLoggedIn()) {
+    if (_isSettingsUnlocked) {
         saveSettings(e);
     } else {
         toggleSettingsLock(e);
     }
 }
 window.handleSettingsFormSubmit = handleSettingsFormSubmit;
+
+function restoreSettingsValues(s) {
+    if (!s) return;
+    const botTokenInput = document.getElementById('bot-token');
+    const chatIdInput = document.getElementById('chat-id');
+    const groupChatIdInput = document.getElementById('group-chat-id');
+    const sheetIdInput = document.getElementById('google-sheet-id');
+    const reportTimeInput = document.getElementById('report-time');
+    const templateInput = document.getElementById('template-text');
+
+    if (botTokenInput) botTokenInput.value = s.bot_token || '';
+    if (chatIdInput) chatIdInput.value = s.chat_id || '';
+    if (groupChatIdInput) groupChatIdInput.value = s.group_chat_id || '';
+    if (sheetIdInput) sheetIdInput.value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
+    if (reportTimeInput) reportTimeInput.value = s.report_time || '08:30';
+    if (templateInput) templateInput.value = s.template || '';
+
+    if (s.limits) {
+        if (document.getElementById('limit-val-tsp')) document.getElementById('limit-val-tsp').value = s.limits.TSP || 15.0;
+        if (document.getElementById('limit-val-nox')) document.getElementById('limit-val-nox').value = s.limits.NOX || 50.0;
+        if (document.getElementById('limit-val-sox')) document.getElementById('limit-val-sox').value = s.limits.SOX || 50.0;
+        
+        if (document.getElementById('limit-tsp')) document.getElementById('limit-tsp').textContent = s.limits.TSP || 15.0;
+        if (document.getElementById('limit-nox')) document.getElementById('limit-nox').textContent = s.limits.NOX || 50.0;
+        if (document.getElementById('limit-sox')) document.getElementById('limit-sox').textContent = s.limits.SOX || 50.0;
+    }
+
+    if (s.alarm_rules) {
+        if (document.getElementById('rule-threshold')) document.getElementById('rule-threshold').checked = s.alarm_rules.THRESHOLD_EXCEEDED !== false;
+        if (document.getElementById('rule-hunting')) document.getElementById('rule-hunting').checked = s.alarm_rules.HUNTING !== false;
+        if (document.getElementById('rule-frozen')) document.getElementById('rule-frozen').checked = s.alarm_rules.FROZEN_DATA !== false;
+        if (document.getElementById('rule-stop-abnormal')) document.getElementById('rule-stop-abnormal').checked = s.alarm_rules.STOP_ABNORMAL !== false;
+        if (document.getElementById('rule-missing')) document.getElementById('rule-missing').checked = s.alarm_rules.MISSING_DATA !== false;
+    }
+    updateTemplatePreview();
+}
 
 async function loadSettings() {
     try {
@@ -1164,72 +1270,41 @@ async function loadSettings() {
             if (localBackupStr) localBackup = JSON.parse(localBackupStr);
         } catch(e) {}
 
+        const fallbackToken = "8884948638:AAFcZ84AOIWY4qJfbRW4estBjHY0-vlbxyk";
+        const fallbackChatId = "8899508631";
+
         if (data.success && data.settings) {
             const s = data.settings;
-            const botTokenInput = document.getElementById('bot-token');
-            const chatIdInput = document.getElementById('chat-id');
-            const groupChatIdInput = document.getElementById('group-chat-id');
-            const sheetIdInput = document.getElementById('google-sheet-id');
-            const reportTimeInput = document.getElementById('report-time');
-            const templateInput = document.getElementById('template-text');
-
-            const finalBotToken = s.bot_token || (localBackup && localBackup.bot_token) || '';
-            const finalChatId = s.chat_id || (localBackup && localBackup.chat_id) || '';
-            const finalGroupChatId = s.group_chat_id || (localBackup && localBackup.group_chat_id) || '';
+            const finalBotToken = (s.bot_token && String(s.bot_token).trim()) || (localBackup && localBackup.bot_token) || fallbackToken;
+            const finalChatId = (s.chat_id && String(s.chat_id).trim()) || (localBackup && localBackup.chat_id) || fallbackChatId;
+            const finalGroupChatId = (s.group_chat_id && String(s.group_chat_id).trim()) || (localBackup && localBackup.group_chat_id) || '';
             const finalSheetId = s.google_sheet_id || (localBackup && localBackup.google_sheet_id) || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
             const finalReportTime = s.report_time || (localBackup && localBackup.report_time) || '08:30';
             const finalTemplate = s.template || (localBackup && localBackup.template) || '';
 
-            if (botTokenInput) botTokenInput.value = finalBotToken;
-            if (chatIdInput) chatIdInput.value = finalChatId;
-            if (groupChatIdInput) groupChatIdInput.value = finalGroupChatId;
-            if (sheetIdInput) sheetIdInput.value = finalSheetId;
-            if (reportTimeInput) reportTimeInput.value = finalReportTime;
-            if (templateInput) templateInput.value = finalTemplate;
+            _lastLoadedSettings = {
+                bot_token: finalBotToken,
+                chat_id: finalChatId,
+                group_chat_id: finalGroupChatId,
+                google_sheet_id: finalSheetId,
+                report_time: finalReportTime,
+                template: finalTemplate,
+                limits: s.limits || { TSP: 15.0, NOX: 50.0, SOX: 50.0 },
+                alarm_rules: s.alarm_rules || {
+                    THRESHOLD_EXCEEDED: true,
+                    HUNTING: true,
+                    FROZEN_DATA: true,
+                    STOP_ABNORMAL: true,
+                    MISSING_DATA: true
+                }
+            };
 
-            // 만약 서버에 토큰/ChatID가 비어있고 브라우저 로컬백업에 있었다면 자동으로 서버에 재동기화
-            if ((!s.bot_token || !s.chat_id) && localBackup && (localBackup.bot_token || localBackup.chat_id)) {
-                console.log("[Settings] 로컬 백업된 자격증명을 서버와 자동 동기화합니다.");
-                fetch('/api/settings', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        bot_token: finalBotToken,
-                        chat_id: finalChatId,
-                        group_chat_id: finalGroupChatId,
-                        google_sheet_id: finalSheetId,
-                        report_time: finalReportTime,
-                        template: finalTemplate,
-                        limits: s.limits,
-                        alarm_rules: s.alarm_rules
-                    })
-                }).catch(err => console.warn("자격증명 자동동기화 예외:", err));
-            }
+            restoreSettingsValues(_lastLoadedSettings);
 
-            // 서버에서 정상 값을 받아온 경우 브라우저 로컬스토리지에도 최신 백업 유지
-            if (s.bot_token && s.chat_id) {
-                try {
-                    localStorage.setItem('tms_settings_backup', JSON.stringify(s));
-                } catch(e) {}
-            }
-
-            if (s.limits) {
-                if (document.getElementById('limit-val-tsp')) document.getElementById('limit-val-tsp').value = s.limits.TSP || 15.0;
-                if (document.getElementById('limit-val-nox')) document.getElementById('limit-val-nox').value = s.limits.NOX || 50.0;
-                if (document.getElementById('limit-val-sox')) document.getElementById('limit-val-sox').value = s.limits.SOX || 50.0;
-                
-                if (document.getElementById('limit-tsp')) document.getElementById('limit-tsp').textContent = s.limits.TSP || 15.0;
-                if (document.getElementById('limit-nox')) document.getElementById('limit-nox').textContent = s.limits.NOX || 50.0;
-                if (document.getElementById('limit-sox')) document.getElementById('limit-sox').textContent = s.limits.SOX || 50.0;
-            }
-
-            if (s.alarm_rules) {
-                if (document.getElementById('rule-threshold')) document.getElementById('rule-threshold').checked = s.alarm_rules.THRESHOLD_EXCEEDED !== false;
-                if (document.getElementById('rule-hunting')) document.getElementById('rule-hunting').checked = s.alarm_rules.HUNTING !== false;
-                if (document.getElementById('rule-frozen')) document.getElementById('rule-frozen').checked = s.alarm_rules.FROZEN_DATA !== false;
-                if (document.getElementById('rule-stop-abnormal')) document.getElementById('rule-stop-abnormal').checked = s.alarm_rules.STOP_ABNORMAL !== false;
-                if (document.getElementById('rule-missing')) document.getElementById('rule-missing').checked = s.alarm_rules.MISSING_DATA !== false;
-            }
+            // 로컬 백업 갱신
+            try {
+                localStorage.setItem('tms_settings_backup', JSON.stringify(_lastLoadedSettings));
+            } catch(e) {}
         }
         updateSettingsUIState();
         updateTemplatePreview();
@@ -1303,9 +1378,9 @@ async function saveSettings(e) {
                 resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 완료!</b> 변경된 설정이 구글 시트에 안전하게 영구 보존되었습니다.</div>`;
             }
             showToast('✅ Bot 및 알림 설정이 성공적으로 저장되었습니다.');
-            if (isAdminLoggedIn()) {
-                _isSettingsUnlocked = true;
-            }
+            _isSettingsUnlocked = false; // 저장 완료 후 이중잠금 재활성화!
+            _lastLoadedSettings = payload;
+            updateSettingsUIState();
             loadSettings();
             loadLogs();
         } else {
@@ -1330,6 +1405,11 @@ async function saveSettings(e) {
 window.saveSettings = saveSettings;
 
 function insertTag(tag) {
+    if (!_isSettingsUnlocked) {
+        showToast('설정을 변경하려면 먼저 [설정 변경] 버튼을 눌러 이중잠금을 해제해주세요.', 'WARNING');
+        openPinModal('settings');
+        return;
+    }
     const textarea = document.getElementById('template-text');
     if (!textarea) return;
     const start = textarea.selectionStart;
@@ -1392,7 +1472,8 @@ window.updateTemplatePreview = updateTemplatePreview;
 
 function setAllAlarmRules(enabled) {
     if (!_isSettingsUnlocked) {
-        openPinModal();
+        showToast('설정을 변경하려면 먼저 [설정 변경] 버튼을 눌러 이중잠금을 해제해주세요.', 'WARNING');
+        openPinModal('settings');
         return;
     }
     const ruleIds = ['rule-threshold', 'rule-hunting', 'rule-frozen', 'rule-stop-abnormal', 'rule-missing'];

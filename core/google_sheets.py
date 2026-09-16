@@ -494,6 +494,11 @@ class GoogleSheetsStorage:
             except Exception as e:
                 print(f"[GoogleSheetsStorage] Settings 시트 읽기 예외: {e}")
         
+        if not base_settings.get("bot_token"):
+            base_settings["bot_token"] = "8884948638:AAFcZ84AOIWY4qJfbRW4estBjHY0-vlbxyk"
+        if not base_settings.get("chat_id"):
+            base_settings["chat_id"] = "8899508631"
+
         return base_settings
 
     def save_settings(self, new_settings: Dict[str, Any]) -> bool:

@@ -967,11 +967,11 @@ def get_settings():
     return {
         "success": True,
         "settings": {
-            "bot_token": st.get("bot_token") or config.TELEGRAM_BOT_TOKEN or "",
-            "chat_id": st.get("chat_id") or config.TELEGRAM_CHAT_ID or "",
-            "group_chat_id": st.get("group_chat_id") or getattr(config, "TELEGRAM_GROUP_CHAT_ID", "") or "",
-            "google_sheet_id": st.get("google_sheet_id") or config.GOOGLE_SHEET_ID or "1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY",
-            "report_time": st.get("report_time") or "08:30",
+            "bot_token": str(st.get("bot_token") or config.TELEGRAM_BOT_TOKEN or "8884948638:AAFcZ84AOIWY4qJfbRW4estBjHY0-vlbxyk").strip(),
+            "chat_id": str(st.get("chat_id") or config.TELEGRAM_CHAT_ID or "8899508631").strip(),
+            "group_chat_id": str(st.get("group_chat_id") or getattr(config, "TELEGRAM_GROUP_CHAT_ID", "") or "").strip(),
+            "google_sheet_id": str(st.get("google_sheet_id") or config.GOOGLE_SHEET_ID or "1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY").strip(),
+            "report_time": str(st.get("report_time") or "08:30").strip(),
             "template": st.get("template") or config.DEFAULT_TEMPLATE,
             "limits": limits_val,
             "alarm_rules": alarm_rules_val

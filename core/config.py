@@ -13,8 +13,8 @@ class StackEmissionLimits(BaseModel):
 
 class SystemConfig:
     """시스템 환경 설정 및 상수"""
-    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
-    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "")
+    TELEGRAM_BOT_TOKEN: str = os.getenv("TELEGRAM_BOT_TOKEN", "8884948638:AAFcZ84AOIWY4qJfbRW4estBjHY0-vlbxyk")
+    TELEGRAM_CHAT_ID: str = os.getenv("TELEGRAM_CHAT_ID", "8899508631")
     TELEGRAM_GROUP_CHAT_ID: str = os.getenv("TELEGRAM_GROUP_CHAT_ID", "")
     GOOGLE_SHEET_ID: str = os.getenv("GOOGLE_SHEET_ID", "1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY")
     DAILY_REPORT_TIME: str = os.getenv("DAILY_REPORT_TIME", "08:30")
