@@ -956,17 +956,25 @@ def get_settings():
         "STOP_ABNORMAL": True,
         "MISSING_DATA": True
     }
+    limits_val = st.get("limits")
+    if not limits_val or not isinstance(limits_val, dict):
+        limits_val = default_limits.model_dump() if hasattr(default_limits, "model_dump") else default_limits.dict()
+
+    alarm_rules_val = st.get("alarm_rules")
+    if not alarm_rules_val or not isinstance(alarm_rules_val, dict):
+        alarm_rules_val = default_rules
+
     return {
         "success": True,
         "settings": {
-            "bot_token": st.get("bot_token", config.TELEGRAM_BOT_TOKEN),
-            "chat_id": st.get("chat_id", config.TELEGRAM_CHAT_ID),
-            "group_chat_id": st.get("group_chat_id", getattr(config, "TELEGRAM_GROUP_CHAT_ID", "")),
-            "google_sheet_id": st.get("google_sheet_id", config.GOOGLE_SHEET_ID),
-            "report_time": st.get("report_time", "08:30"),
-            "template": st.get("template", config.DEFAULT_TEMPLATE),
-            "limits": st.get("limits", default_limits.model_dump() if hasattr(default_limits, "model_dump") else default_limits.dict()),
-            "alarm_rules": st.get("alarm_rules", default_rules)
+            "bot_token": st.get("bot_token") or config.TELEGRAM_BOT_TOKEN or "",
+            "chat_id": st.get("chat_id") or config.TELEGRAM_CHAT_ID or "",
+            "group_chat_id": st.get("group_chat_id") or getattr(config, "TELEGRAM_GROUP_CHAT_ID", "") or "",
+            "google_sheet_id": st.get("google_sheet_id") or config.GOOGLE_SHEET_ID or "1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY",
+            "report_time": st.get("report_time") or "08:30",
+            "template": st.get("template") or config.DEFAULT_TEMPLATE,
+            "limits": limits_val,
+            "alarm_rules": alarm_rules_val
         }
     }
 

@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
     <!-- Custom Style -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20260916_v2">
+    <link rel="stylesheet" href="/static/css/style.css?v=20260916_v3">
 </head>
 <body>
     <div class="app-container">
@@ -31,9 +31,15 @@
                     <span>굴뚝 배출가스 자동감시 및 텔레그램 알림 시스템</span>
                 </div>
             </div>
-            <div class="header-status">
-                <span class="status-indicator active"></span>
-                <span class="status-text">시스템 정상 가동 중</span>
+            <div class="header-actions" style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+                <div class="header-status">
+                    <span class="status-indicator active"></span>
+                    <span class="status-text">시스템 정상 가동 중</span>
+                </div>
+                <!-- 관리자 로그인 / 로그아웃 버튼 -->
+                <button id="btn-admin-auth" class="btn btn-secondary btn-sm" onclick="handleAdminAuthClick()" style="padding:6px 14px; font-size:0.82rem; display:inline-flex; align-items:center; gap:6px; border-radius:8px; border:1px solid rgba(255,255,255,0.15); font-weight:600; cursor:pointer; transition:all 0.2s;">
+                    <i class="fa-solid fa-lock"></i> 관리자 로그인
+                </button>
             </div>
         </header>
 
@@ -42,7 +48,8 @@
             <button class="nav-tab active" data-tab="tab-analysis">
                 <i class="fa-solid fa-chart-line"></i> Data 분석
             </button>
-            <button class="nav-tab" data-tab="tab-settings">
+            <!-- 관리자 로그인 시에만 노출되는 봇설정 및 로그 탭 -->
+            <button class="nav-tab" id="nav-tab-settings" data-tab="tab-settings" style="display: none;">
                 <i class="fa-solid fa-robot"></i> Bot 설정 및 로그
             </button>
         </nav>
@@ -643,6 +650,6 @@
     </div>
 
     <!-- Custom Script -->
-    <script src="/static/js/app.js?v=20260916_v2"></script>
+    <script src="/static/js/app.js?v=20260916_v3"></script>
 </body>
 </html>

@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     safeInit(initSettings, 'initSettings');
     safeInit(initSimulation, 'initSimulation');
     safeInit(initLogs, 'initLogs');
+    safeInit(checkAdminLoginState, 'checkAdminLoginState');
     
     // 최초 데이터 로드
     safeInit(loadAnalysisData, 'loadAnalysisData');
@@ -27,11 +28,17 @@ function initTabs() {
     const tabs = document.querySelectorAll('.nav-tab');
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
+            const target = tab.dataset.tab;
+            if (target === 'tab-settings' && !isAdminLoggedIn()) {
+                showToast('🔒 봇 설정 및 로그는 관리자 로그인 후 접근할 수 있습니다.', 'WARNING');
+                openPinModal();
+                return;
+            }
+
             tabs.forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
             
             tab.classList.add('active');
-            const target = tab.dataset.tab;
             document.getElementById(target).classList.add('active');
 
             if (target === 'tab-settings') {
@@ -974,6 +981,60 @@ function initSettings() {
 
 let _isSettingsUnlocked = false;
 
+function isAdminLoggedIn() {
+    return sessionStorage.getItem('tms_admin_logged_in') === 'true';
+}
+
+function checkAdminLoginState() {
+    const navSettings = document.getElementById('nav-tab-settings');
+    const btnAuth = document.getElementById('btn-admin-auth');
+    const tabSettings = document.getElementById('tab-settings');
+    const tabAnalysis = document.getElementById('tab-analysis');
+    const navAnalysis = document.querySelector('.nav-tab[data-tab="tab-analysis"]');
+
+    if (isAdminLoggedIn()) {
+        _isSettingsUnlocked = true;
+        if (navSettings) navSettings.style.display = 'inline-flex';
+        if (btnAuth) {
+            btnAuth.innerHTML = '<i class="fa-solid fa-shield-halved" style="color:#10b981;"></i> 관리자 로그아웃';
+            btnAuth.style.borderColor = 'rgba(16,185,129,0.5)';
+            btnAuth.style.background = 'rgba(16,185,129,0.15)';
+            btnAuth.style.color = '#a7f3d0';
+        }
+        updateSettingsUIState();
+    } else {
+        _isSettingsUnlocked = false;
+        if (navSettings) navSettings.style.display = 'none';
+        if (btnAuth) {
+            btnAuth.innerHTML = '<i class="fa-solid fa-lock"></i> 관리자 로그인';
+            btnAuth.style.borderColor = 'rgba(255,255,255,0.15)';
+            btnAuth.style.background = '';
+            btnAuth.style.color = '';
+        }
+        // 제3자가 설정 화면에 머무르지 못하도록 Data 분석 화면으로 자동 강제 전환
+        if (tabSettings && tabSettings.classList.contains('active')) {
+            tabSettings.classList.remove('active');
+            if (navSettings) navSettings.classList.remove('active');
+            if (tabAnalysis) tabAnalysis.classList.add('active');
+            if (navAnalysis) navAnalysis.classList.add('active');
+        }
+        updateSettingsUIState();
+    }
+}
+window.checkAdminLoginState = checkAdminLoginState;
+window.isAdminLoggedIn = isAdminLoggedIn;
+
+function handleAdminAuthClick() {
+    if (isAdminLoggedIn()) {
+        sessionStorage.removeItem('tms_admin_logged_in');
+        showToast('🔒 관리자 로그아웃 되었습니다. 봇 설정 메뉴가 숨김 처리됩니다.');
+        checkAdminLoginState();
+    } else {
+        openPinModal();
+    }
+}
+window.handleAdminAuthClick = handleAdminAuthClick;
+
 function setSettingsFormDisabled(disabled) {
     const inputIds = [
         'bot-token', 'chat-id', 'group-chat-id', 
@@ -991,7 +1052,7 @@ function updateSettingsUIState() {
     const btn = document.getElementById('btn-save-settings');
     const banner = document.getElementById('settings-lock-banner');
     
-    if (_isSettingsUnlocked) {
+    if (isAdminLoggedIn()) {
         setSettingsFormDisabled(false);
         if (btn) {
             btn.innerHTML = '<i class="fa-solid fa-floppy-disk"></i> 설정 저장';
@@ -999,7 +1060,7 @@ function updateSettingsUIState() {
             btn.style.color = '#fff';
         }
         if (banner) {
-            banner.innerHTML = '<i class="fa-solid fa-lock-open" style="color:#10b981;"></i> <b style="color:#10b981;">관리자 모드 활성화됨:</b> 설정값을 수정한 후 상단의 <b>[설정 저장]</b>을 누르면 저장 및 자동 잠금됩니다.';
+            banner.innerHTML = '<i class="fa-solid fa-lock-open" style="color:#10b981;"></i> <b style="color:#10b981;">관리자 모드 활성화됨:</b> 설정값을 수정한 후 상단의 <b>[설정 저장]</b>을 누르면 구글 시트에 안전하게 영구 저장됩니다.';
             banner.style.background = 'rgba(16,185,129,0.12)';
             banner.style.border = '1px solid rgba(16,185,129,0.3)';
             banner.style.color = '#a7f3d0';
@@ -1012,7 +1073,7 @@ function updateSettingsUIState() {
             btn.style.color = '#000';
         }
         if (banner) {
-            banner.innerHTML = '<i class="fa-solid fa-shield-halved"></i> <b>보안 잠금 상태:</b> 설정 변경을 방지하기 위해 비활성화되어 있습니다. 수정하려면 우측 <b>[설정 변경]</b>을 누르세요.';
+            banner.innerHTML = '<i class="fa-solid fa-shield-halved"></i> <b>보안 잠금 상태:</b> 제3자의 설정 변경을 방지하기 위해 비활성화되어 있습니다. 수정하려면 우측 <b>[설정 변경]</b>을 누르세요.';
             banner.style.background = 'rgba(245,158,11,0.12)';
             banner.style.border = '1px solid rgba(245,158,11,0.3)';
             banner.style.color = '#fef08a';
@@ -1047,10 +1108,17 @@ function verifyAdminPin() {
     const val = input ? input.value.trim() : '';
 
     if (val === '77137713') {
+        sessionStorage.setItem('tms_admin_logged_in', 'true');
         _isSettingsUnlocked = true;
         closePinModal();
-        updateSettingsUIState();
-        showToast('🔓 관리자 인증 성공! 설정을 수정한 후 [설정 저장]을 누르세요.');
+        checkAdminLoginState();
+        showToast('🔓 관리자 인증 성공! [Bot 설정 및 로그] 메뉴가 활성화되었습니다.');
+        
+        // 봇 설정 탭으로 자동 전환 및 최신 설정 로드
+        const navSettings = document.getElementById('nav-tab-settings');
+        if (navSettings) {
+            navSettings.click();
+        }
     } else {
         if (err) err.style.display = 'block';
         if (input) {
@@ -1065,10 +1133,10 @@ window.verifyAdminPin = verifyAdminPin;
 async function toggleSettingsLock(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
-    if (!_isSettingsUnlocked) {
+    if (!isAdminLoggedIn()) {
         openPinModal();
     } else {
-        // 이미 잠금 해제 상태이면 설정 저장 실행
+        // 이미 관리자 로그인 상태이면 바로 설정 저장 실행
         await saveSettings(e);
     }
 }
@@ -1076,7 +1144,7 @@ window.toggleSettingsLock = toggleSettingsLock;
 
 function handleSettingsFormSubmit(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
-    if (_isSettingsUnlocked) {
+    if (isAdminLoggedIn()) {
         saveSettings(e);
     } else {
         toggleSettingsLock(e);
@@ -1089,14 +1157,61 @@ async function loadSettings() {
         const res = await fetch('/api/settings');
         const data = await res.json();
         
+        // 로컬 백업 확인 (서버 데이터가 비어있을 때 안전 복구용)
+        let localBackup = null;
+        try {
+            const localBackupStr = localStorage.getItem('tms_settings_backup');
+            if (localBackupStr) localBackup = JSON.parse(localBackupStr);
+        } catch(e) {}
+
         if (data.success && data.settings) {
             const s = data.settings;
-            if (document.getElementById('bot-token')) document.getElementById('bot-token').value = s.bot_token || '';
-            if (document.getElementById('chat-id')) document.getElementById('chat-id').value = s.chat_id || '';
-            if (document.getElementById('group-chat-id')) document.getElementById('group-chat-id').value = s.group_chat_id || '';
-            if (document.getElementById('google-sheet-id')) document.getElementById('google-sheet-id').value = s.google_sheet_id || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
-            if (document.getElementById('report-time')) document.getElementById('report-time').value = s.report_time || '08:30';
-            if (document.getElementById('template-text')) document.getElementById('template-text').value = s.template || '';
+            const botTokenInput = document.getElementById('bot-token');
+            const chatIdInput = document.getElementById('chat-id');
+            const groupChatIdInput = document.getElementById('group-chat-id');
+            const sheetIdInput = document.getElementById('google-sheet-id');
+            const reportTimeInput = document.getElementById('report-time');
+            const templateInput = document.getElementById('template-text');
+
+            const finalBotToken = s.bot_token || (localBackup && localBackup.bot_token) || '';
+            const finalChatId = s.chat_id || (localBackup && localBackup.chat_id) || '';
+            const finalGroupChatId = s.group_chat_id || (localBackup && localBackup.group_chat_id) || '';
+            const finalSheetId = s.google_sheet_id || (localBackup && localBackup.google_sheet_id) || '1vmOgz9xh6w5LMg6Oh-yU_-1TNwIuQ8-vIpBAT0IpizY';
+            const finalReportTime = s.report_time || (localBackup && localBackup.report_time) || '08:30';
+            const finalTemplate = s.template || (localBackup && localBackup.template) || '';
+
+            if (botTokenInput) botTokenInput.value = finalBotToken;
+            if (chatIdInput) chatIdInput.value = finalChatId;
+            if (groupChatIdInput) groupChatIdInput.value = finalGroupChatId;
+            if (sheetIdInput) sheetIdInput.value = finalSheetId;
+            if (reportTimeInput) reportTimeInput.value = finalReportTime;
+            if (templateInput) templateInput.value = finalTemplate;
+
+            // 만약 서버에 토큰/ChatID가 비어있고 브라우저 로컬백업에 있었다면 자동으로 서버에 재동기화
+            if ((!s.bot_token || !s.chat_id) && localBackup && (localBackup.bot_token || localBackup.chat_id)) {
+                console.log("[Settings] 로컬 백업된 자격증명을 서버와 자동 동기화합니다.");
+                fetch('/api/settings', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        bot_token: finalBotToken,
+                        chat_id: finalChatId,
+                        group_chat_id: finalGroupChatId,
+                        google_sheet_id: finalSheetId,
+                        report_time: finalReportTime,
+                        template: finalTemplate,
+                        limits: s.limits,
+                        alarm_rules: s.alarm_rules
+                    })
+                }).catch(err => console.warn("자격증명 자동동기화 예외:", err));
+            }
+
+            // 서버에서 정상 값을 받아온 경우 브라우저 로컬스토리지에도 최신 백업 유지
+            if (s.bot_token && s.chat_id) {
+                try {
+                    localStorage.setItem('tms_settings_backup', JSON.stringify(s));
+                } catch(e) {}
+            }
 
             if (s.limits) {
                 if (document.getElementById('limit-val-tsp')) document.getElementById('limit-val-tsp').value = s.limits.TSP || 15.0;
@@ -1162,6 +1277,11 @@ async function saveSettings(e) {
         alarm_rules: alarmRules
     };
 
+    // 로컬스토리지 백업에 즉시 안전 저장
+    try {
+        localStorage.setItem('tms_settings_backup', JSON.stringify(payload));
+    } catch(e) {}
+
     // 버튼 로딩 상태
     if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> 저장 중...'; }
     if (resultDiv) {
@@ -1180,10 +1300,12 @@ async function saveSettings(e) {
         if (data.success) {
             if (resultDiv) {
                 resultDiv.style.display = 'block';
-                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 및 잠금 완료!</b> 변경된 설정이 성공적으로 반영되었습니다.</div>`;
+                resultDiv.innerHTML = `<div style="padding:10px 14px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.35);border-radius:8px;color:var(--accent-emerald);font-size:0.87rem;"><i class="fa-solid fa-circle-check"></i> <b>설정 저장 완료!</b> 변경된 설정이 구글 시트에 안전하게 영구 보존되었습니다.</div>`;
             }
-            showToast('✅ Bot 및 알림 설정이 저장되었으며 보안 잠금 처리되었습니다.');
-            _isSettingsUnlocked = false;
+            showToast('✅ Bot 및 알림 설정이 성공적으로 저장되었습니다.');
+            if (isAdminLoggedIn()) {
+                _isSettingsUnlocked = true;
+            }
             loadSettings();
             loadLogs();
         } else {

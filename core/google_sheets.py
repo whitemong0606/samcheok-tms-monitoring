@@ -453,32 +453,79 @@ class GoogleSheetsStorage:
         return False
 
     def get_settings(self) -> Dict[str, Any]:
+        """
+        저장된 설정값을 구글 시트 -> 로컬 파일 -> 환경변수/기본값 순서로 안전하게 머지하여 반환합니다.
+        민감 정보나 주요 설정이 누락되거나 빈 값으로 덮어써지지 않도록 보장합니다.
+        """
+        # 1. 기본 설정값으로 시작
+        base_settings = self._get_default_data()["settings"].copy()
+        
+        # 2. 로컬 fallback 파일에서 읽기
+        local_data = self._load_local_data()
+        local_settings = local_data.get("settings", {})
+        for k, v in local_settings.items():
+            if v is not None and str(v).strip() != "":
+                base_settings[k] = v
+            elif k in ["limits", "alarm_rules"] and isinstance(v, dict) and v:
+                base_settings[k] = v
+
+        # 3. 구글 시트 Settings 탭에서 최신 설정값 읽기
+        if not self.spreadsheet:
+            self._connect_sheets()
+
         if self.spreadsheet:
             try:
                 worksheet = self.spreadsheet.worksheet("Settings")
                 records = worksheet.get_all_records()
-                settings = {}
                 for r in records:
                     key = r.get("key")
                     val = r.get("value")
                     if key:
-                        try:
-                            settings[key] = json.loads(val)
-                        except Exception:
-                            settings[key] = val
-                return settings
-            except Exception:
-                pass
+                        parsed_val = val
+                        if isinstance(val, str) and (val.startswith("{") or val.startswith("[") or val.isdigit()):
+                            try:
+                                parsed_val = json.loads(val)
+                            except Exception:
+                                parsed_val = val
+                        if parsed_val is not None and str(parsed_val).strip() != "":
+                            base_settings[key] = parsed_val
+                        elif key in ["limits", "alarm_rules"] and isinstance(parsed_val, dict) and parsed_val:
+                            base_settings[key] = parsed_val
+            except Exception as e:
+                print(f"[GoogleSheetsStorage] Settings 시트 읽기 예외: {e}")
         
-        data = self._load_local_data()
-        return data.get("settings", {})
+        return base_settings
 
     def save_settings(self, new_settings: Dict[str, Any]) -> bool:
+        """
+        설정값을 구글 시트 및 로컬 저장소에 영구 보존합니다.
+        - 부분 업데이트(예: last_daily_report_date 갱신) 시 기존 bot_token, chat_id 등 중요 정보가 삭제되지 않음
+        - 빈 값이 전달된 경우 기존 유효값이 있다면 영구 보존
+        """
+        if not new_settings or not isinstance(new_settings, dict):
+            return False
+
+        # 1. 기존 전체 설정 안전 로드 (구글 시트 + 로컬 머지)
+        current_settings = self.get_settings()
+
+        # 2. 새 설정값 병합 (민감 필드가 빈 문자열로 오면 기존값 보존)
+        protected_keys = ["bot_token", "chat_id", "group_chat_id", "google_sheet_id"]
+        for k, v in new_settings.items():
+            if k in protected_keys:
+                val_str = str(v if v is not None else "").strip()
+                if not val_str and current_settings.get(k):
+                    # 새 값이 비어있는데 기존 유효값이 있다면 보존
+                    continue
+            current_settings[k] = v
+
+        # 3. 로컬 파일 및 메모리에 반영
         data = self._load_local_data()
-        current_settings = data.get("settings", {})
-        current_settings.update(new_settings)
         data["settings"] = current_settings
         self._save_local_data(data)
+
+        # 4. 구글 시트 Settings 탭에 안전하게 반영
+        if not self.spreadsheet:
+            self._connect_sheets()
 
         if self.spreadsheet:
             try:
@@ -490,16 +537,16 @@ class GoogleSheetsStorage:
 
                 cell_updates = []
                 for k, v in current_settings.items():
-                    val_str = json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v)
+                    val_str = json.dumps(v, ensure_ascii=False) if isinstance(v, (dict, list)) else str(v if v is not None else "")
                     cell_updates.append([k, val_str])
                     
                 worksheet.clear()
                 worksheet.append_row(["key", "value"])
-                for row in cell_updates:
-                    worksheet.append_row(row)
+                if cell_updates:
+                    worksheet.append_rows(cell_updates)
                 return True
             except Exception as e:
-                print(f"[GoogleSheetsStorage] Settings 저장 오류: {e}")
+                print(f"[GoogleSheetsStorage] Settings 구글 시트 저장 오류: {e}")
         return False
 
     def save_manual_5m_data(self, df: pd.DataFrame) -> bool:
