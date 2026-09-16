@@ -164,12 +164,20 @@ class StackSimulator:
             if rep.get("alarms"):
                 all_alarms.extend(rep["alarms"])
 
+        unique_slots = df_target["timestamp"].nunique() if not df_target.empty and "timestamp" in df_target.columns else 0
+        latest_ts = str(df_target["timestamp"].max()) if not df_target.empty and "timestamp" in df_target.columns else ""
+        if unique_slots > 0:
+            telem_status = f"🟢 정상 수신 중 (최근: {latest_ts[-8:]} / 금일 {unique_slots}회 누적)"
+        else:
+            telem_status = "⚪ 데이터 미수신"
+
         comprehensive_report = {
             "date": period_str,
             "outlets": outlets,
             "reports": reports_by_outlet,
             "all_alarms": all_alarms,
-            "alarm_count": len(all_alarms)
+            "alarm_count": len(all_alarms),
+            "telemetry_30m_status": telem_status
         }
 
         # 6. 메시지 렌더링

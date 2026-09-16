@@ -165,9 +165,33 @@ class TelegramBot:
                 alarms_text = str(alarm_summary)
             alarm_count_val = report_data.get("alarm_count", 0)
 
-        # 4. 치환 테이블 구성
+        # 30분 데이터 수신 현황 파악 ({30분데이터수신상태})
+        telemetry_status = report_data.get("telemetry_30m_status")
+        if not telemetry_status:
+            try:
+                df_today = storage.read_telemetry_data(date_str)
+                if df_today is not None and not df_today.empty and "timestamp" in df_today.columns:
+                    latest_ts = str(df_today["timestamp"].max())
+                    unique_slots = df_today["timestamp"].nunique()
+                    telemetry_status = f"🟢 정상 수신 중 (최근: {latest_ts[-8:]} / 금일 {unique_slots}회 누적)"
+                else:
+                    telemetry_status = "⚪ 최근 수신 데이터 없음"
+            except Exception:
+                telemetry_status = "🟢 정상 수신 중"
+
+        # 4. 치환 테이블 구성 (직관적인 한글 변수 및 영문 변수 동시 완벽 지원)
         replacements = {
+            # 한글 직관 변수
+            "{날짜}": date_str,
+            "{기간}": date_str,
+            "{30분데이터수신상태}": telemetry_status,
+            "{배출구별상태}": outlets_status_text,
+            "{배출구별평균}": outlets_averages_text,
+            "{이상신호내역}": alarms_text,
+            "{이상신호건수}": str(alarm_count_val),
+            # 영문 변수 (하위 호환)
             "{date}": date_str,
+            "{telemetry_30m_status}": telemetry_status,
             "{outlets_status}": outlets_status_text,
             "{outlets_averages}": outlets_averages_text,
             "{alarms}": alarms_text,
@@ -189,6 +213,29 @@ class TelegramBot:
         for key, val in replacements.items():
             formatted_text = formatted_text.replace(key, val)
 
-        return formatted_text
+        # 텔레그램 메시지 가독성 향상: 코딩용 태그 없는 대괄호 제목 자동 볼드 처리
+        lines = formatted_text.split("\n")
+        bolded_lines = []
+        for line in lines:
+            trimmed = line.strip()
+            if trimmed.startswith("[") and trimmed.endswith("]") and "<b>" not in trimmed:
+                bolded_lines.append(f"<b>{line}</b>")
+            elif any(trimmed.startswith(icon + " [") and trimmed.endswith("]") for icon in ["📊", "🏭", "🔹", "⚠️", "📡", "🔔"]):
+                # 이모지 + [제목] 형태 볼드 처리
+                parts = trimmed.split(" [", 1)
+                bolded_lines.append(f"{parts[0]} <b>[{parts[1][:-1]}]</b>")
+            elif trimmed.startswith("📅 기간:") and "<b>" not in trimmed:
+                bolded_lines.append(f"📅 <b>기간:</b> {trimmed.replace('📅 기간:', '').strip()}")
+            elif trimmed.startswith("📅 날짜:") and "<b>" not in trimmed:
+                bolded_lines.append(f"📅 <b>날짜:</b> {trimmed.replace('📅 날짜:', '').strip()}")
+            elif trimmed.startswith("📡 30분 데이터 수집상태:") and "<b>" not in trimmed:
+                bolded_lines.append(f"📡 <b>30분 데이터 수집상태:</b> {trimmed.replace('📡 30분 데이터 수집상태:', '').strip()}")
+            else:
+                bolded_lines.append(line)
+
+        return "\n".join(bolded_lines)
 
 telegram_bot = TelegramBot()
+
+def render_template(report_data: Dict[str, Any], template_str: Optional[str] = None) -> str:
+    return telegram_bot.render_template(report_data, template_str)

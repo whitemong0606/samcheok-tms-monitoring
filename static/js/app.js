@@ -966,6 +966,10 @@ function initSettings() {
     if (btnSave) {
         btnSave.onclick = toggleSettingsLock;
     }
+    const tmplText = document.getElementById('template-text');
+    if (tmplText) {
+        tmplText.addEventListener('input', updateTemplatePreview);
+    }
 }
 
 let _isSettingsUnlocked = false;
@@ -1113,6 +1117,7 @@ async function loadSettings() {
             }
         }
         updateSettingsUIState();
+        updateTemplatePreview();
     } catch (err) {
         console.error("설정 로드 오류:", err);
     }
@@ -1212,8 +1217,69 @@ function insertTag(tag) {
     textarea.value = text.substring(0, start) + tag + text.substring(end);
     textarea.focus();
     textarea.selectionStart = textarea.selectionEnd = start + tag.length;
+    updateTemplatePreview();
 }
 window.insertTag = insertTag;
+
+function updateTemplatePreview() {
+    const previewEl = document.getElementById('template-live-preview');
+    if (!previewEl) return;
+
+    let tmpl = document.getElementById('template-text')?.value || '';
+    if (!tmpl.trim()) {
+        tmpl = `[한국남부발전 삼척빛드림본부] 굴뚝 TMS 일일 모니터링 리포트\n기준일자: {날짜}\n\n[30분 데이터 수신 현황]\n{30분데이터수신상태}\n\n[배출구별 24시간 가동 현황]\n{배출구별상태}\n\n[배출구별 평균 농도 (mg/m³, ppm)]\n{배출구별평균}\n\n[이상 징후 감지 내역 (총 {이상신호건수})]\n{이상신호내역}\n\n* 본 메시지는 삼척빛드림본부 굴뚝 자동감시 시스템에서 자동 생성되었습니다.`;
+    }
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const mockStatus = '🟢 정상 수신 중 (최근: 08:30 / 금일 18회 누적)';
+    const mockOutletsStatus = 
+`[배출구 1] 🟢 정상 운전 중 (운전 24.0h)
+[배출구 2] 🔴 가동정지 (정지 24.0h)
+[배출구 3] 🟢 정상 운전 중 (운전 24.0h)
+[배출구 4] 🟢 정상 운전 중 (운전 24.0h)
+[배출구 5] 🟢 정상 운전 중 (운전 24.0h)`;
+    const mockOutletsAvg = 
+`[배출구 1] TSP: 3.42, NOX: 18.50, SOX: 12.10
+[배출구 3] TSP: 4.15, NOX: 22.30, SOX: 14.80
+[배출구 4] TSP: 2.80, NOX: 19.10, SOX: 11.40
+[배출구 5] TSP: 3.90, NOX: 20.40, SOX: 13.50`;
+    const mockAlarmCount = '0건 (전 항목 정상)';
+    const mockAlarms = '✅ 이상 징후 없음 (모든 항목 정상 범위)';
+
+    let rendered = tmpl;
+    rendered = rendered.replace(/\{날짜\}|\{date\}/g, todayStr);
+    rendered = rendered.replace(/\{30분데이터수신상태\}|\{telemetry_status\}/g, mockStatus);
+    rendered = rendered.replace(/\{배출구별상태\}|\{outlets_status\}/g, mockOutletsStatus);
+    rendered = rendered.replace(/\{배출구별평균\}|\{outlets_averages\}/g, mockOutletsAvg);
+    rendered = rendered.replace(/\{이상신호건수\}|\{alarm_count\}/g, mockAlarmCount);
+    rendered = rendered.replace(/\{이상신호내역\}|\{alarms\}/g, mockAlarms);
+    rendered = rendered.replace(/\{outlet\}/g, '배출구 1');
+    rendered = rendered.replace(/\{status\}/g, '정상 운전 중');
+    rendered = rendered.replace(/\{operating_hours\}/g, '24.0');
+    rendered = rendered.replace(/\{avg_tsp\}/g, '3.42');
+    rendered = rendered.replace(/\{avg_nox\}/g, '18.50');
+    rendered = rendered.replace(/\{avg_sox\}/g, '12.10');
+
+    let html = escapeHtml(rendered);
+    html = html.replace(/&lt;b&gt;(.*?)&lt;\/b&gt;/gi, '<b>$1</b>');
+    html = html.replace(/(\[[^\]\n]+\])/g, '<b>$1</b>');
+
+    previewEl.innerHTML = html;
+}
+window.updateTemplatePreview = updateTemplatePreview;
+
+function setAllAlarmRules(enabled) {
+    if (!_isSettingsUnlocked) {
+        openPinModal();
+        return;
+    }
+    const ruleIds = ['rule-threshold', 'rule-hunting', 'rule-frozen', 'rule-stop-abnormal', 'rule-missing'];
+    ruleIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = !!enabled;
+    });
+}
+window.setAllAlarmRules = setAllAlarmRules;
 
 // 7. System Simulation & Test Dispatch
 function initSimulation() {

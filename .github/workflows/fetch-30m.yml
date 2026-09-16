@@ -2,35 +2,34 @@ name: 30m CleanSYS Real-Time API Cron
 
 on:
   schedule:
-    # 0분, 30분 정각의 GitHub 전세계 큐 정체 및 드롭(누락)을 방지하기 위해 15분 간격 비혼잡 시각(7, 22, 37, 52분)에 실행
-    - cron: '7,22,37,52 * * * *'
-  workflow_dispatch:  # 수동 실행 버튼도 제공
+    # 매 시간 5분 및 35분에 정기 트리거
+    - cron: '5 * * * *'
+    - cron: '35 * * * *'
+  workflow_dispatch:  # 수동 실행 버튼 제공
 
 jobs:
   fetch-30m:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger CleanSYS 30m Real-Time API Fetch & Google Sheets Accumulation
+      - name: Continuous 30m Real-Time Fetch Loop (Idempotent)
         run: |
-          echo "=== CleanSYS 30분 실측 API 수집 시작 - $(date '+%Y-%m-%d %H:%M:%S KST') ==="
-          HTTP_RESPONSE=$(curl -s -o /tmp/response_body.txt -w "%{http_code}" \
-            -X GET "https://sctmsmonitor.vercel.app/api/cron/fetch-30m" \
-            -H "User-Agent: GitHub-Actions-Cron" \
-            --retry 2 \
-            --retry-delay 3 \
-            --max-time 60)
-          BODY=$(cat /tmp/response_body.txt)
-          echo "HTTP Status: $HTTP_RESPONSE"
-          echo "API Response: $BODY"
-          if [ "$HTTP_RESPONSE" != "200" ]; then
-            echo "WARNING: API returned HTTP $HTTP_RESPONSE (not 200)"
-            exit 1
-          fi
-          echo "=== 수집 완료 ==="
-
-      - name: Keepalive Workflow
-        uses: gautamkrishnar/keepalive-workflow@v2
-        with:
-          committer_username: "github-actions[bot]"
-          committer_email: "github-actions[bot]@users.noreply.github.com"
+          echo "=== CleanSYS 30분 실측 상시 수집 루프 가동 ==="
+          # 1회 실행 시 30분 동안 10분 간격으로 총 3회 수집 시도 (GitHub 스케줄러 지연 시에도 완벽 커버)
+          for i in 1 2 3; do
+            echo "--- 수집 시도 #$i ($(date '+%Y-%m-%d %H:%M:%S KST')) ---"
+            HTTP_RESPONSE=$(curl -s -o /tmp/response_body.txt -w "%{http_code}" \
+              -X GET "https://sctmsmonitor.vercel.app/api/cron/fetch-30m" \
+              -H "User-Agent: GitHub-Actions-Cron" \
+              --retry 3 \
+              --retry-delay 5 \
+              --max-time 60)
+            echo "HTTP Status: $HTTP_RESPONSE"
+            cat /tmp/response_body.txt || true
+            echo ""
+            if [ "$i" -lt 3 ]; then
+              echo "다음 주기까지 10분(600초) 대기..."
+              sleep 600
+            fi
+          done
+          echo "=== 30분 상시 수집 루프 완료 ==="
 

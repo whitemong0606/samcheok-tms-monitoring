@@ -48,15 +48,17 @@ class SystemConfig:
     STOP_TEMP_THRESHOLD = 70.0     # °C 이하
 
     DEFAULT_TEMPLATE = (
-        "📊 <b>[삼척빛드림본부 굴뚝 배출가스 일일 종합 리포트]</b>\n"
-        "📅 <b>기간:</b> {date}\n\n"
-        "🏭 <b>[배출구별 설비 운전 상태]</b>\n"
-        "{outlets_status}\n\n"
-        "🔹 <b>[배출구별 운전 중 평균 수치]</b>\n"
-        "{outlets_averages}\n\n"
-        "⚠️ <b>[배출구별 이상 신호 감지 내역 ({alarm_count}건)]</b>\n"
-        "{alarms}"
+        "📊 [삼척빛드림본부 굴뚝 배출가스 일일 종합 리포트]\n"
+        "📅 기간: {날짜}\n"
+        "📡 30분 데이터 수집상태: {30분데이터수신상태}\n\n"
+        "🏭 [배출구별 설비 운전 상태]\n"
+        "{배출구별상태}\n\n"
+        "🔹 [배출구별 운전 중 평균 수치]\n"
+        "{배출구별평균}\n\n"
+        "⚠️ [배출구별 이상 신호 감지 내역 ({이상신호건수}건)]\n"
+        "{이상신호내역}"
     )
 
 config = SystemConfig()
 default_limits = StackEmissionLimits()
+DEFAULT_TEMPLATE = SystemConfig.DEFAULT_TEMPLATE

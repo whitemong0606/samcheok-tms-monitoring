@@ -902,11 +902,19 @@ def execute_daily_report(is_forced: bool = False) -> Dict[str, Any]:
         if rep.get("alarms"):
             all_alarms.extend(rep["alarms"])
 
+    unique_slots = df_24h["timestamp"].nunique() if not df_24h.empty and "timestamp" in df_24h.columns else 0
+    latest_ts = str(df_24h["timestamp"].max()) if not df_24h.empty and "timestamp" in df_24h.columns else ""
+    if unique_slots > 0:
+        telemetry_status = f"🟢 정상 수신 중 (최근: {latest_ts[-8:]} / 금일 {unique_slots}회 누적)"
+    else:
+        telemetry_status = "⚪ 데이터 미수신"
+
     comprehensive_report = {
         "date": today_str,
         "reports": reports_map,
         "all_alarms": all_alarms,
-        "alarm_count": len(all_alarms)
+        "alarm_count": len(all_alarms),
+        "telemetry_30m_status": telemetry_status
     }
 
     # 3. 텔레그램 그룹 메시지 발송
