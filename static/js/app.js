@@ -15,6 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     safeInit(initSettings, 'initSettings');
     safeInit(initSimulation, 'initSimulation');
     safeInit(initLogs, 'initLogs');
+    safeInit(checkAffiliationState, 'checkAffiliationState');
     safeInit(checkAdminLoginState, 'checkAdminLoginState');
     
     // 최초 데이터 로드
@@ -980,6 +981,110 @@ function initSettings() {
         tmplText.addEventListener('input', updateTemplatePreview);
     }
 }
+
+// ==========================================
+// 8. Affiliation Verification (소속 인증 & 화면 블러 제어)
+// ==========================================
+function isAffiliationVerified() {
+    return !!sessionStorage.getItem('tms_affiliation_verified');
+}
+window.isAffiliationVerified = isAffiliationVerified;
+
+function getAffiliationName() {
+    return sessionStorage.getItem('tms_affiliation_verified') || '한국남부발전(주) 삼척빛드림본부';
+}
+window.getAffiliationName = getAffiliationName;
+
+function checkAffiliationState() {
+    const mainContent = document.querySelector('.app-content');
+    const overlay = document.getElementById('affiliation-lock-overlay');
+    const badgeWrap = document.getElementById('affiliation-badge-wrap');
+    const label = document.getElementById('user-affiliation-label');
+
+    if (isAffiliationVerified()) {
+        if (mainContent) mainContent.classList.remove('content-blurred-locked');
+        if (overlay) overlay.style.display = 'none';
+        if (badgeWrap) badgeWrap.style.display = 'inline-flex';
+        if (label) label.textContent = getAffiliationName();
+    } else {
+        if (mainContent) mainContent.classList.add('content-blurred-locked');
+        if (overlay) overlay.style.display = 'flex';
+        if (badgeWrap) badgeWrap.style.display = 'none';
+        
+        setTimeout(() => {
+            const codeInput = document.getElementById('auth-affiliation-code');
+            if (codeInput) codeInput.focus();
+        }, 150);
+    }
+}
+window.checkAffiliationState = checkAffiliationState;
+
+function submitAffiliationAuth(e) {
+    if (e && typeof e.preventDefault === 'function') e.preventDefault();
+
+    const selectEl = document.getElementById('auth-affiliation-select');
+    const codeInput = document.getElementById('auth-affiliation-code');
+    const errorMsg = document.getElementById('affiliation-error-msg');
+
+    const selectedAffiliation = selectEl ? selectEl.value : '한국남부발전(주) 삼척빛드림본부';
+    const enteredCode = codeInput ? codeInput.value.trim() : '';
+
+    // 유효한 소속 인증 코드: 7713 또는 77137713
+    const validCodes = ['7713', '77137713'];
+
+    if (validCodes.includes(enteredCode)) {
+        sessionStorage.setItem('tms_affiliation_verified', selectedAffiliation);
+        if (errorMsg) errorMsg.style.display = 'none';
+        if (codeInput) codeInput.value = '';
+
+        checkAffiliationState();
+        showToast(`🔓 [${selectedAffiliation}] 소속 인증 완료! 수동 및 자동 분석 데이터가 활성화되었습니다.`);
+
+        if (typeof loadAnalysisData === 'function') {
+            loadAnalysisData();
+        }
+    } else {
+        if (errorMsg) {
+            errorMsg.style.display = 'block';
+            errorMsg.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> 소속 인증 코드가 올바르지 않습니다. 다시 입력해주세요.';
+        }
+        if (codeInput) {
+            codeInput.value = '';
+            codeInput.focus();
+            codeInput.style.borderColor = '#ef4444';
+            setTimeout(() => {
+                if (codeInput) codeInput.style.borderColor = '';
+            }, 1500);
+        }
+        showToast('❌ 소속 인증 코드가 올바르지 않습니다. (인증 실패)', 'ERROR');
+    }
+}
+window.submitAffiliationAuth = submitAffiliationAuth;
+
+function handleAffiliationLogout() {
+    sessionStorage.removeItem('tms_affiliation_verified');
+    checkAffiliationState();
+    showToast('🔒 사업장 소속 인증이 해제되었습니다. 데이터 열람이 제한됩니다.');
+}
+window.handleAffiliationLogout = handleAffiliationLogout;
+
+function toggleAffiliationCodeVisibility() {
+    const input = document.getElementById('auth-affiliation-code');
+    const icon = document.getElementById('icon-toggle-aff-code');
+    const text = document.getElementById('text-toggle-aff-code');
+    if (!input) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.className = 'fa-solid fa-eye-slash';
+        if (text) text.textContent = '숨기기';
+    } else {
+        input.type = 'password';
+        if (icon) icon.className = 'fa-solid fa-eye';
+        if (text) text.textContent = '보기';
+    }
+}
+window.toggleAffiliationCodeVisibility = toggleAffiliationCodeVisibility;
 
 let _isSettingsUnlocked = false;
 let _lastLoadedSettings = null;
