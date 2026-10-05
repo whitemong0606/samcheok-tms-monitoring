@@ -1088,10 +1088,11 @@ td.cell-alarm-warning {
 
 /* Affiliation Authentication Overlay & Blur Effect */
 .content-blurred-locked {
-    filter: blur(8px);
+    filter: blur(14px);
+    opacity: 0.85;
     pointer-events: none !important;
     user-select: none !important;
-    transition: filter 0.35s ease;
+    transition: filter 0.4s ease, opacity 0.4s ease;
 }
 
 .affiliation-overlay {

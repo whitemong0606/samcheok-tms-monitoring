@@ -1007,6 +1007,11 @@ function openAffiliationModal() {
     overlay.style.opacity = '1';
     overlay.style.visibility = 'visible';
     overlay.style.pointerEvents = 'auto';
+
+    setTimeout(() => {
+        const codeInput = document.getElementById('auth-affiliation-code');
+        if (codeInput) codeInput.focus();
+    }, 200);
 }
 window.openAffiliationModal = openAffiliationModal;
 
@@ -1066,16 +1071,40 @@ function submitAffiliationAuth(e) {
     if (e && typeof e.preventDefault === 'function') e.preventDefault();
 
     const selectEl = document.getElementById('auth-affiliation-select');
+    const codeInput = document.getElementById('auth-affiliation-code');
+    const errorMsg = document.getElementById('affiliation-error-msg');
+
     const selectedAffiliation = selectEl ? selectEl.value : '한국남부발전(주) 삼척빛드림본부';
+    const enteredCode = codeInput ? codeInput.value.trim() : '';
 
-    // 비밀번호 입력 없이 소속 콤보박스 선택 후 로그인 시 즉시 블러 해제
-    sessionStorage.setItem('tms_affiliation_verified', selectedAffiliation);
-    checkAffiliationState();
+    // 유효한 소속 인증 비밀번호: 7713 또는 77137713
+    const validCodes = ['7713', '77137713'];
 
-    showToast(`🔓 [${selectedAffiliation}] 소속 인증 완료! 데이터 열람이 활성화되었습니다.`);
+    if (validCodes.includes(enteredCode)) {
+        sessionStorage.setItem('tms_affiliation_verified', selectedAffiliation);
+        if (errorMsg) errorMsg.style.display = 'none';
+        if (codeInput) codeInput.value = '';
 
-    if (typeof loadAnalysisData === 'function') {
-        loadAnalysisData();
+        checkAffiliationState();
+        showToast(`🔓 [${selectedAffiliation}] 소속 인증 성공! 데이터 열람이 활성화되었습니다.`);
+
+        if (typeof loadAnalysisData === 'function') {
+            loadAnalysisData();
+        }
+    } else {
+        if (errorMsg) {
+            errorMsg.style.display = 'block';
+            errorMsg.innerHTML = '<i class="fa-solid fa-circle-exclamation"></i> 소속 인증 비밀번호가 올바르지 않습니다. 다시 입력해주세요.';
+        }
+        if (codeInput) {
+            codeInput.value = '';
+            codeInput.focus();
+            codeInput.style.borderColor = '#ef4444';
+            setTimeout(() => {
+                if (codeInput) codeInput.style.borderColor = '';
+            }, 1500);
+        }
+        showToast('❌ 소속 인증 비밀번호가 올바르지 않습니다. (인증 전 데이터 열람 불가)', 'ERROR');
     }
 }
 window.submitAffiliationAuth = submitAffiliationAuth;
@@ -1083,12 +1112,25 @@ window.submitAffiliationAuth = submitAffiliationAuth;
 function handleAffiliationLogout() {
     sessionStorage.removeItem('tms_affiliation_verified');
     checkAffiliationState({ delayModal: false });
-    showToast('🔒 사업장 소속 인증이 해제되었습니다. 데이터 열람이 제한됩니다.');
+    showToast('🔒 사업장 소속 인증이 해제되었습니다. 데이터 열람이 다시 블러 처리됩니다.');
 }
 window.handleAffiliationLogout = handleAffiliationLogout;
 
 function toggleAffiliationCodeVisibility() {
-    // 호환성 유지용 no-op
+    const input = document.getElementById('auth-affiliation-code');
+    const icon = document.getElementById('icon-toggle-aff-code');
+    const text = document.getElementById('text-toggle-aff-code');
+    if (!input) return;
+
+    if (input.type === 'password') {
+        input.type = 'text';
+        if (icon) icon.className = 'fa-solid fa-eye-slash';
+        if (text) text.textContent = '숨기기';
+    } else {
+        input.type = 'password';
+        if (icon) icon.className = 'fa-solid fa-eye';
+        if (text) text.textContent = '보기';
+    }
 }
 window.toggleAffiliationCodeVisibility = toggleAffiliationCodeVisibility;
 
