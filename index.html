@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
     <!-- Custom Style -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20261005_v1">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261005_v2">
 </head>
 <body>
     <div class="app-container">
@@ -647,7 +647,7 @@
 
             <div class="affiliation-notice">
                 <i class="fa-solid fa-triangle-exclamation" style="color:var(--accent-amber);"></i> <b>비인가 접근 제한 안내:</b><br>
-                본 시스템은 한국남부발전(주) 삼척빛드림본부 굴뚝 배출가스 전용 모니터링 시스템입니다. 수동 및 실시간 자동 분석 데이터를 열람하시려면 <b>소속 사업장을 선택</b>하고 <b>소속 인증 코드</b>를 입력하여 인증을 완료해주세요.
+                본 시스템은 한국남부발전(주) 삼척빛드림본부 굴뚝 배출가스 전용 모니터링 시스템입니다. 비인가자의 데이터 열람을 방지하기 위해 화면이 블러(흐림) 처리되어 있습니다. 수동 및 실시간 자동 분석 데이터를 열람하시려면 <b>소속 사업장을 선택</b>하고 <b>[소속 인증 로그인]</b> 버튼을 눌러주세요.
             </div>
 
             <form class="affiliation-form" onsubmit="submitAffiliationAuth(event)">
@@ -661,25 +661,8 @@
                     </select>
                 </div>
 
-                <div class="form-group" style="margin-bottom:0;">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:2px;">
-                        <label for="auth-affiliation-code" style="margin:0;"><i class="fa-solid fa-key"></i> 소속 인증 코드</label>
-                        <button type="button" onclick="toggleAffiliationCodeVisibility()" style="background:none; border:none; color:var(--accent-cyan); font-size:0.74rem; cursor:pointer; padding:0 2px; display:inline-flex; align-items:center; gap:4px;">
-                            <i class="fa-solid fa-eye" id="icon-toggle-aff-code"></i> <span id="text-toggle-aff-code">보기</span>
-                        </button>
-                    </div>
-                    <div class="input-with-icon">
-                        <i class="fa-solid fa-lock" style="font-size:0.78rem;"></i>
-                        <input type="password" id="auth-affiliation-code" class="form-input" placeholder="소속 인증 코드 입력" autocomplete="off" style="padding:7px 10px 7px 30px; font-size:0.9rem; letter-spacing:2px;">
-                    </div>
-                </div>
-
-                <div id="affiliation-error-msg" style="display:none; color:#f87171; font-size:0.82rem; background:rgba(239,68,68,0.12); padding:8px 10px; border-radius:6px; border:1px solid rgba(239,68,68,0.3);">
-                    <i class="fa-solid fa-circle-exclamation"></i> 소속 인증 코드가 올바르지 않습니다. 다시 입력해주세요.
-                </div>
-
-                <button type="submit" id="btn-affiliation-submit" class="affiliation-btn-submit">
-                    <i class="fa-solid fa-unlock-keyhole"></i> 소속 인증 및 데이터 열람
+                <button type="submit" id="btn-affiliation-submit" class="affiliation-btn-submit" style="margin-top:4px;">
+                    <i class="fa-solid fa-right-to-bracket"></i> 소속 인증 로그인
                 </button>
             </form>
         </div>
@@ -722,6 +705,6 @@
     </div>
 
     <!-- Custom Script -->
-    <script src="/static/js/app.js?v=20261005_v1"></script>
+    <script src="/static/js/app.js?v=20261005_v2"></script>
 </body>
 </html>
