@@ -15,7 +15,7 @@ document.addEventListener('DOMContentLoaded', () => {
     safeInit(initSettings, 'initSettings');
     safeInit(initSimulation, 'initSimulation');
     safeInit(initLogs, 'initLogs');
-    safeInit(checkAffiliationState, 'checkAffiliationState');
+    safeInit(() => checkAffiliationState({ delayModal: true }), 'checkAffiliationState');
     safeInit(checkAdminLoginState, 'checkAdminLoginState');
     
     // 최초 데이터 로드
@@ -995,21 +995,69 @@ function getAffiliationName() {
 }
 window.getAffiliationName = getAffiliationName;
 
-function checkAffiliationState() {
-    const mainContent = document.querySelector('.app-content');
+let _affiliationModalTimer = null;
+
+function openAffiliationModal() {
     const overlay = document.getElementById('affiliation-lock-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+    // 강제 리플로우 후 active 클래스 부여하여 부드러운 전환 효과 보장
+    void overlay.offsetWidth;
+    overlay.classList.add('active');
+    overlay.style.opacity = '1';
+    overlay.style.visibility = 'visible';
+    overlay.style.pointerEvents = 'auto';
+}
+window.openAffiliationModal = openAffiliationModal;
+
+function closeAffiliationModal() {
+    const overlay = document.getElementById('affiliation-lock-overlay');
+    if (!overlay) return;
+    overlay.classList.remove('active');
+    overlay.style.opacity = '0';
+    overlay.style.pointerEvents = 'none';
+    setTimeout(() => {
+        if (!overlay.classList.contains('active')) {
+            overlay.style.display = 'none';
+            overlay.style.visibility = 'hidden';
+        }
+    }, 350);
+}
+window.closeAffiliationModal = closeAffiliationModal;
+
+function checkAffiliationState(options = {}) {
+    const mainContent = document.querySelector('.app-content');
     const badgeWrap = document.getElementById('affiliation-badge-wrap');
     const label = document.getElementById('user-affiliation-label');
+    const headerLoginBtn = document.getElementById('btn-header-affiliation-login');
 
     if (isAffiliationVerified()) {
         if (mainContent) mainContent.classList.remove('content-blurred-locked');
-        if (overlay) overlay.style.display = 'none';
+        if (headerLoginBtn) headerLoginBtn.style.display = 'none';
         if (badgeWrap) badgeWrap.style.display = 'inline-flex';
         if (label) label.textContent = getAffiliationName();
+        closeAffiliationModal();
+        if (_affiliationModalTimer) {
+            clearTimeout(_affiliationModalTimer);
+            _affiliationModalTimer = null;
+        }
     } else {
+        // 미인증 상태: 메인 대시보드 화면을 블러 처리(가림막)하고 헤더에 소속 인증 로그인 버튼을 항상 노출
         if (mainContent) mainContent.classList.add('content-blurred-locked');
-        if (overlay) overlay.style.display = 'flex';
+        if (headerLoginBtn) headerLoginBtn.style.display = 'inline-flex';
         if (badgeWrap) badgeWrap.style.display = 'none';
+
+        if (options && options.delayModal) {
+            // 사이트 접속 시 블러 처리된 전체 창이 먼저 완전히 시각화된 후, 약 0.85초 뒤 로그인 모달이 부드럽게 팝업
+            if (_affiliationModalTimer) clearTimeout(_affiliationModalTimer);
+            _affiliationModalTimer = setTimeout(() => {
+                if (!isAffiliationVerified()) {
+                    openAffiliationModal();
+                }
+            }, 850);
+        } else if (options && options.immediateModal) {
+            openAffiliationModal();
+        }
     }
 }
 window.checkAffiliationState = checkAffiliationState;
@@ -1034,7 +1082,7 @@ window.submitAffiliationAuth = submitAffiliationAuth;
 
 function handleAffiliationLogout() {
     sessionStorage.removeItem('tms_affiliation_verified');
-    checkAffiliationState();
+    checkAffiliationState({ delayModal: false });
     showToast('🔒 사업장 소속 인증이 해제되었습니다. 데이터 열람이 제한됩니다.');
 }
 window.handleAffiliationLogout = handleAffiliationLogout;

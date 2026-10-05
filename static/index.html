@@ -16,7 +16,7 @@
     <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
     <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/ko.js"></script>
     <!-- Custom Style -->
-    <link rel="stylesheet" href="/static/css/style.css?v=20261005_v2">
+    <link rel="stylesheet" href="/static/css/style.css?v=20261006_v1">
 </head>
 <body>
     <div class="app-container">
@@ -36,6 +36,10 @@
                     <span class="status-indicator active"></span>
                     <span class="status-text">시스템 정상 가동 중</span>
                 </div>
+                <!-- 미인증 시 헤더에 노출되는 소속 인증 로그인 버튼 -->
+                <button id="btn-header-affiliation-login" class="btn btn-emerald btn-sm" onclick="openAffiliationModal()" style="display:none; padding:6px 14px; font-size:0.82rem; font-weight:700; border-radius:8px; cursor:pointer;">
+                    <i class="fa-solid fa-building-shield"></i> 소속 인증 로그인
+                </button>
                 <!-- 소속 인증 뱃지 & 인증 해제 버튼 -->
                 <div id="affiliation-badge-wrap" style="display:none; align-items:center; gap:8px;">
                     <span class="badge" style="background:rgba(6,182,212,0.15); border:1px solid rgba(6,182,212,0.4); color:var(--accent-cyan); font-size:0.8rem; padding:5px 10px; border-radius:8px; display:inline-flex; align-items:center; gap:6px;">
@@ -633,16 +637,21 @@
     </div>
 
     <!-- Affiliation Authentication Overlay (소속 인증 콤보박스 모달 & 전면 블러 가림막) -->
-    <div id="affiliation-lock-overlay" class="affiliation-overlay" style="display:flex;">
+    <div id="affiliation-lock-overlay" class="affiliation-overlay" style="display:none; opacity:0;">
         <div class="affiliation-card">
-            <div class="affiliation-header">
-                <div class="shield-icon">
-                    <i class="fa-solid fa-building-shield"></i>
+            <div class="affiliation-header" style="display:flex; justify-content:space-between; align-items:center;">
+                <div style="display:flex; align-items:center; gap:14px;">
+                    <div class="shield-icon">
+                        <i class="fa-solid fa-building-shield"></i>
+                    </div>
+                    <div>
+                        <h3 style="margin:0;">사업장 소속 인증</h3>
+                        <span style="font-size:0.78rem; color:var(--text-secondary);">CleanSYS 배출가스 데이터 보안 열람 시스템</span>
+                    </div>
                 </div>
-                <div>
-                    <h3>사업장 소속 인증</h3>
-                    <span>CleanSYS 배출가스 데이터 보안 열람 시스템</span>
-                </div>
+                <button type="button" class="btn-modal-close" onclick="closeAffiliationModal()" title="창 닫기 (블러 화면 둘러보기)">
+                    <i class="fa-solid fa-xmark"></i>
+                </button>
             </div>
 
             <div class="affiliation-notice">
@@ -661,9 +670,14 @@
                     </select>
                 </div>
 
-                <button type="submit" id="btn-affiliation-submit" class="affiliation-btn-submit" style="margin-top:4px;">
-                    <i class="fa-solid fa-right-to-bracket"></i> 소속 인증 로그인
-                </button>
+                <div style="display:flex; gap:10px; margin-top:8px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeAffiliationModal()" style="flex:1; padding:11px; font-weight:600; font-size:0.86rem; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; gap:6px;">
+                        <i class="fa-solid fa-eye-slash"></i> 블러 화면 둘러보기
+                    </button>
+                    <button type="submit" id="btn-affiliation-submit" class="affiliation-btn-submit" style="flex:1.4; margin:0;">
+                        <i class="fa-solid fa-right-to-bracket"></i> 소속 인증 로그인
+                    </button>
+                </div>
             </form>
         </div>
     </div>
@@ -705,6 +719,6 @@
     </div>
 
     <!-- Custom Script -->
-    <script src="/static/js/app.js?v=20261005_v2"></script>
+    <script src="/static/js/app.js?v=20261006_v1"></script>
 </body>
 </html>
